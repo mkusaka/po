@@ -1,7 +1,7 @@
 package version
 
 const (
-	Name    = "mo"
+	Name    = "po"
 	Version = "1.5.5" //nostyle:repetition
 )
 

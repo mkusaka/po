@@ -26,10 +26,10 @@ import (
 	"github.com/k1LoW/errors"
 
 	"github.com/k1LoW/donegroup"
-	"github.com/k1LoW/mo/internal/backup"
-	"github.com/k1LoW/mo/internal/logfile"
-	"github.com/k1LoW/mo/internal/server"
-	"github.com/k1LoW/mo/version"
+	"github.com/mkusaka/po/internal/backup"
+	"github.com/mkusaka/po/internal/logfile"
+	"github.com/mkusaka/po/internal/server"
+	"github.com/mkusaka/po/version"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
@@ -68,68 +68,68 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "mo [flags] [FILE|DIR ...]",
-	Short: "mo is a Markdown viewer that opens .md files in a browser.",
-	Long: `mo is a Markdown viewer that opens .md files in a browser with live-reload.
+	Use:   "po [flags] [FILE|DIR ...]",
+	Short: "po is a Markdown viewer that opens .md files in a browser.",
+	Long: `po is a Markdown viewer that opens .md files in a browser with live-reload.
 
 It runs in the background, serving Markdown files using a built-in React SPA,
 and automatically refreshes the browser when files are saved.
 
 Examples:
-  mo README.md                          Open a single file
-  mo README.md CHANGELOG.md docs/*.md   Open multiple files
-  mo spec.md --target design            Open in a named group
-  mo draft.md --port 6276               Use a different port
-  cat notes.md | mo                     Read Markdown from stdin
-  cmd | mo --target output              Pipe command output into a group
+  po README.md                          Open a single file
+  po README.md CHANGELOG.md docs/*.md   Open multiple files
+  po spec.md --target design            Open in a named group
+  po draft.md --port 6276               Use a different port
+  cat notes.md | po                     Read Markdown from stdin
+  cmd | po --target output              Pipe command output into a group
 
 Single Server, Multiple Files:
-  By default, mo runs a single server on port 6275.
-  If a mo server is already running on the same port, subsequent mo
+  By default, po runs a single server on port 6275.
+  If a po server is already running on the same port, subsequent po
   invocations add files to the existing session instead of starting a new one.
 
-  $ mo README.md          # Starts a mo server in the background
-  $ mo CHANGELOG.md       # Adds the file to the running mo server
+  $ po README.md          # Starts a po server in the background
+  $ po CHANGELOG.md       # Adds the file to the running po server
 
   To run a completely separate session, use a different port:
 
-  $ mo draft.md -p 6276
+  $ po draft.md -p 6276
 
 Groups:
   Files can be organized into named groups using the --target (-t) flag.
   Each group gets its own URL path (e.g., http://localhost:6275/design)
   and its own sidebar in the browser.
 
-  $ mo spec.md --target design      # Opens at /design
-  $ mo api.md --target design       # Adds to the "design" group
-  $ mo notes.md --target notes      # Opens at /notes
+  $ po spec.md --target design      # Opens at /design
+  $ po api.md --target design       # Adds to the "design" group
+  $ po notes.md --target notes      # Opens at /notes
 
   If no --target is specified, files are added to the "default" group.
 
 Starting and Stopping:
-  mo runs in the background by default. The command returns
+  po runs in the background by default. The command returns
   immediately, leaving the shell free for other work.
 
-  $ mo README.md            # Starts mo in the background
-  $ mo --status             # Shows all running mo servers
-  $ mo --shutdown           # Shuts it down
-  $ mo --restart            # Restarts it (preserving session)
+  $ po README.md            # Starts po in the background
+  $ po --status             # Shows all running po servers
+  $ po --shutdown           # Shuts it down
+  $ po --restart            # Restarts it (preserving session)
 
-  Use --foreground to keep the mo server in the foreground.
+  Use --foreground to keep the po server in the foreground.
 
 Session Restore:
-  mo automatically saves session state. When starting a new server,
+  po automatically saves session state. When starting a new server,
   the previous session is restored and merged with any specified files.
 
-  $ mo README.md CHANGELOG.md    # Start with two files
-  $ mo --shutdown                # Shut down the server
-  $ mo                           # Restores README.md and CHANGELOG.md
-  $ mo TODO.md                   # Restores previous session + adds TODO.md
+  $ po README.md CHANGELOG.md    # Start with two files
+  $ po --shutdown                # Shut down the server
+  $ po                           # Restores README.md and CHANGELOG.md
+  $ po TODO.md                   # Restores previous session + adds TODO.md
 
   Use --clear to remove a saved session.
 
 Live-Reload:
-  mo watches all opened files for changes using filesystem notifications.
+  po watches all opened files for changes using filesystem notifications.
   When a file is saved, the browser automatically re-renders the content.
 
 Supported Markdown Features:
@@ -149,23 +149,23 @@ Watch mode and glob patterns:
   opened and new files are picked up automatically. Combine with
   --recursive (-R) to descend into subdirectories.
 
-  $ mo -w '**/*.md'                   Watch all .md files recursively
-  $ mo -w 'docs/**/*.md' -t docs      Watch docs/ tree in "docs" group
-  $ mo -w '*.md' 'docs/**/*.md'       Multiple patterns (positional)
-  $ mo -w docs/                       Watch docs/*.md
-  $ mo -w -R docs/                    Watch docs/**/*.md
-  $ mo -wR docs/                      Same (short-combined form)
-  $ mo --unwatch '**/*.md'            Stop watching a pattern
-  $ mo --unwatch docs/                Stop watching docs/*.md
-  $ mo --unwatch -R docs/             Stop watching all patterns under docs/
+  $ po -w '**/*.md'                   Watch all .md files recursively
+  $ po -w 'docs/**/*.md' -t docs      Watch docs/ tree in "docs" group
+  $ po -w '*.md' 'docs/**/*.md'       Multiple patterns (positional)
+  $ po -w docs/                       Watch docs/*.md
+  $ po -w -R docs/                    Watch docs/**/*.md
+  $ po -wR docs/                      Same (short-combined form)
+  $ po --unwatch '**/*.md'            Stop watching a pattern
+  $ po --unwatch docs/                Stop watching docs/*.md
+  $ po --unwatch -R docs/             Stop watching all patterns under docs/
 
   Without --watch, globs are expanded once and a directory argument
   opens the matching files without live-watching new additions.
 
-  $ mo -R docs/                       Open every .md under docs/ once
+  $ po -R docs/                       Open every .md under docs/ once
 
 WARNING: --bind with a non-loopback address:
-  Binding to a non-localhost address (e.g. 0.0.0.0) exposes mo to the
+  Binding to a non-localhost address (e.g. 0.0.0.0) exposes po to the
   network without any authentication. Remote clients can read any file
   accessible by this user, browse the filesystem via glob patterns, and
   shut down the server. A confirmation prompt is shown before starting.`,
@@ -187,13 +187,13 @@ func init() {
 	rootCmd.Flags().BoolVar(&open, "open", false, "Always open browser (even when adding to existing group)")
 	rootCmd.Flags().BoolVar(&noOpen, "no-open", false, "Do not open browser automatically")
 	rootCmd.MarkFlagsMutuallyExclusive("open", "no-open")
-	rootCmd.Flags().BoolVar(&shutdownServer, "shutdown", false, "Shut down the running mo server on the specified port")
-	rootCmd.Flags().BoolVar(&restartServer, "restart", false, "Restart the running mo server on the specified port")
+	rootCmd.Flags().BoolVar(&shutdownServer, "shutdown", false, "Shut down the running po server on the specified port")
+	rootCmd.Flags().BoolVar(&restartServer, "restart", false, "Restart the running po server on the specified port")
 	rootCmd.MarkFlagsMutuallyExclusive("shutdown", "restart")
 	rootCmd.Flags().StringVar(&restore, "restore", "", "Restore state from file (internal use)")
 	rootCmd.Flags().MarkHidden("restore") //nolint:errcheck
-	rootCmd.Flags().BoolVar(&foreground, "foreground", false, "Run mo server in foreground (do not background)")
-	rootCmd.Flags().BoolVar(&statusServer, "status", false, "Show status of all running mo servers")
+	rootCmd.Flags().BoolVar(&foreground, "foreground", false, "Run po server in foreground (do not background)")
+	rootCmd.Flags().BoolVar(&statusServer, "status", false, "Show status of all running po servers")
 	rootCmd.Flags().BoolVarP(&watchMode, "watch", "w", false, "Treat directory and glob arguments as watch patterns")
 	rootCmd.Flags().BoolVar(&unwatchMode, "unwatch", false, "Remove watched patterns for the given directory or glob arguments")
 	rootCmd.Flags().BoolVarP(&recursive, "recursive", "R", false, "Recurse into subdirectories when a directory is given")
@@ -224,18 +224,18 @@ func run(cmd *cobra.Command, args []string) error {
 		hasBackup := backup.Exists(port)
 
 		if !wasServerRunning && !hasBackup {
-			fmt.Fprintf(os.Stderr, "mo: no saved session for port %d\n", port)
+			fmt.Fprintf(os.Stderr, "po: no saved session for port %d\n", port)
 			return nil
 		}
-		fmt.Fprintf(os.Stderr, "mo: clear saved session for port %d? [Y/n] ", port)
+		fmt.Fprintf(os.Stderr, "po: clear saved session for port %d? [Y/n] ", port)
 		scanner := bufio.NewScanner(os.Stdin)
 		if !scanner.Scan() {
-			fmt.Fprintln(os.Stderr, "mo: canceled")
+			fmt.Fprintln(os.Stderr, "po: canceled")
 			return nil
 		}
 		ans := strings.TrimSpace(scanner.Text())
 		if ans != "" && strings.ToLower(ans) != "y" && strings.ToLower(ans) != "yes" {
-			fmt.Fprintln(os.Stderr, "mo: canceled")
+			fmt.Fprintln(os.Stderr, "po: canceled")
 			return nil
 		}
 
@@ -261,9 +261,9 @@ func run(cmd *cobra.Command, args []string) error {
 			if _, err := spawnNewProcess(addr, ""); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "mo: cleared session and restarted server on port %d\n", port)
+			fmt.Fprintf(os.Stderr, "po: cleared session and restarted server on port %d\n", port)
 		} else {
-			fmt.Fprintf(os.Stderr, "mo: cleared saved session for port %d\n", port)
+			fmt.Fprintf(os.Stderr, "po: cleared saved session for port %d\n", port)
 		}
 		return nil
 	}
@@ -320,7 +320,7 @@ func run(cmd *cobra.Command, args []string) error {
 			for _, name := range names {
 				fmt.Printf("  %s\n", name)
 			}
-			fmt.Fprintf(os.Stderr, "mo: closed %d file(s) from http://%s\n", len(closedPaths), addr)
+			fmt.Fprintf(os.Stderr, "po: closed %d file(s) from http://%s\n", len(closedPaths), addr)
 		}
 		return err
 	}
@@ -415,7 +415,7 @@ func run(cmd *cobra.Command, args []string) error {
 			}
 			slog.Info("added to existing server", "files", len(files), "patterns", len(patterns), "stdin", stdinData != nil, "addr", addr)
 			emitServeOutput(addr, deeplinks, false)
-			fmt.Fprintf(os.Stderr, "mo: added %d item(s) to http://%s\n", added, addr)
+			fmt.Fprintf(os.Stderr, "po: added %d item(s) to http://%s\n", added, addr)
 
 			if isNewGroup || open {
 				openBrowser(addr)
@@ -439,7 +439,7 @@ func run(cmd *cobra.Command, args []string) error {
 	var uploadedFiles []server.UploadedFileData
 	if len(restoredFiles) > 0 || len(restoredPatterns) > 0 || len(restoredUploads) > 0 {
 		slog.Info("restoring session from backup", "port", port)
-		fmt.Fprintf(os.Stderr, "mo: restoring previous session for port %d\n", port)
+		fmt.Fprintf(os.Stderr, "po: restoring previous session for port %d\n", port)
 		filesByGroup = mergeGroups(restoredFiles, filesByGroup)
 		patternsByGroup = mergeGroups(restoredPatterns, patternsByGroup)
 		uploadedFiles = restoredUploads
@@ -461,7 +461,7 @@ func run(cmd *cobra.Command, args []string) error {
 		o := termenv.NewOutput(os.Stderr)
 		c := func(s string) termenv.Style { return o.String(s).Foreground(o.Color("208")) }
 		fmt.Fprintln(os.Stderr, c("SECURITY WARNING:").Bold(),
-			c(fmt.Sprintf("Binding to %s instead of localhost. mo has no authentication -- remote clients can:", bind)))
+			c(fmt.Sprintf("Binding to %s instead of localhost. po has no authentication -- remote clients can:", bind)))
 		fmt.Fprintln(os.Stderr, c("  - Read any file accessible by this user"))
 		fmt.Fprintln(os.Stderr, c("  - Browse the filesystem via glob patterns"))
 		fmt.Fprintln(os.Stderr, c("  - Shut down or restart the server"))
@@ -471,12 +471,12 @@ func run(cmd *cobra.Command, args []string) error {
 			if err := scanner.Err(); err != nil {
 				return err
 			}
-			fmt.Fprintln(os.Stderr, "mo: canceled")
+			fmt.Fprintln(os.Stderr, "po: canceled")
 			return nil
 		}
 		ans := strings.ToLower(strings.TrimSpace(scanner.Text()))
 		if ans != "y" && ans != "yes" {
-			fmt.Fprintln(os.Stderr, "mo: canceled")
+			fmt.Fprintln(os.Stderr, "po: canceled")
 			return nil
 		}
 	}
@@ -946,7 +946,7 @@ type probeResult struct {
 	groups []string
 }
 
-// probeServer checks that a mo server is running on addr by calling
+// probeServer checks that a po server is running on addr by calling
 // GET /_/api/status and validating the response contains a version field.
 func probeServer(addr string, timeout ...time.Duration) (*probeResult, error) {
 	t := probeTimeoutDefault
@@ -956,7 +956,7 @@ func probeServer(addr string, timeout ...time.Duration) (*probeResult, error) {
 	client := &http.Client{Timeout: t}
 	resp, err := client.Get(fmt.Sprintf("http://%s/_/api/status", addr))
 	if err != nil {
-		return nil, fmt.Errorf("no mo server found on %s", addr)
+		return nil, fmt.Errorf("no po server found on %s", addr)
 	}
 	defer resp.Body.Close()
 
@@ -972,7 +972,7 @@ func probeServer(addr string, timeout ...time.Duration) (*probeResult, error) {
 		} `json:"groups"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil || status.Version == "" {
-		return nil, fmt.Errorf("server on %s is not a mo instance", addr)
+		return nil, fmt.Errorf("server on %s is not a po instance", addr)
 	}
 
 	groups := make([]string, len(status.Groups))
@@ -1019,7 +1019,7 @@ func doShutdown(addr string) error {
 	}
 
 	slog.Info("shutdown request sent", "addr", addr)
-	fmt.Fprintf(os.Stderr, "mo: shutdown request sent to http://%s\n", addr)
+	fmt.Fprintf(os.Stderr, "po: shutdown request sent to http://%s\n", addr)
 	return nil
 }
 
@@ -1040,7 +1040,7 @@ func doRestart(addr string) error {
 	}
 
 	slog.Info("restart request sent", "addr", addr)
-	fmt.Fprintf(os.Stderr, "mo: restart request sent to http://%s\n", addr)
+	fmt.Fprintf(os.Stderr, "po: restart request sent to http://%s\n", addr)
 	return nil
 }
 
@@ -1079,7 +1079,7 @@ func doUnwatch(addr string, patterns []string, groupName string) error {
 		}
 
 		slog.Info("pattern removed", "pattern", pat, "group", groupName)
-		fmt.Fprintf(os.Stderr, "mo: unwatched %s\n", pat)
+		fmt.Fprintf(os.Stderr, "po: unwatched %s\n", pat)
 	}
 
 	return nil
@@ -1178,7 +1178,7 @@ func doStatus() error {
 		if jsonOutput {
 			writeJSON([]jsonStatusEntry{})
 		} else {
-			fmt.Fprintln(os.Stderr, "mo: no mo server found")
+			fmt.Fprintln(os.Stderr, "po: no po server found")
 		}
 		return nil
 	}
@@ -1254,7 +1254,7 @@ func doStatus() error {
 		}
 		writeJSON(jsonEntries)
 	} else if !found {
-		fmt.Fprintln(os.Stderr, "mo: no mo server found")
+		fmt.Fprintln(os.Stderr, "po: no po server found")
 	}
 
 	return nil
@@ -1273,12 +1273,12 @@ func discoverPorts() []int {
 	var ports []int
 	for _, e := range entries {
 		name := e.Name()
-		// Match "mo-{port}.log"
-		if !strings.HasPrefix(name, "mo-") || !strings.HasSuffix(name, ".log") {
+		// Match "po-{port}.log"
+		if !strings.HasPrefix(name, "po-") || !strings.HasSuffix(name, ".log") {
 			continue
 		}
-		// Exclude rotated backups like "mo-6275.log.1"
-		raw := strings.TrimSuffix(strings.TrimPrefix(name, "mo-"), ".log")
+		// Exclude rotated backups like "po-6275.log.1"
+		raw := strings.TrimSuffix(strings.TrimPrefix(name, "po-"), ".log")
 		p, err := strconv.Atoi(raw)
 		if err != nil {
 			continue
@@ -1471,7 +1471,7 @@ func startBackground(addr string, filesByGroup map[string][]string, patternsByGr
 		}
 	}
 	emitServeOutput(addr, deeplinks, true)
-	fmt.Fprintf(os.Stderr, "mo: serving at http://%s (pid %d)\n", addr, pid)
+	fmt.Fprintf(os.Stderr, "po: serving at http://%s (pid %d)\n", addr, pid)
 
 	openBrowser(addr)
 

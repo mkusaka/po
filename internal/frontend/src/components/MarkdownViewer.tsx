@@ -265,8 +265,10 @@ function MermaidImageCopyButton({ svg }: { svg: string }) {
 
   return (
     <button
+      type="button"
       className={`absolute right-10 top-2 flex items-center justify-center rounded-md p-1 cursor-pointer transition-all duration-150 border ${themedButtonStyle} ${copied ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
       onClick={handleCopy}
+      aria-label="Copy Mermaid diagram as image"
       title="Copy image"
     >
       {copied ? (
@@ -366,8 +368,10 @@ function ZoomButton({
 }) {
   return (
     <button
+      type="button"
       className={`absolute ${position} top-2 flex items-center justify-center rounded-md p-1 cursor-pointer transition-all duration-150 border ${themedButtonStyle} opacity-0 ${groupClass}`}
       onClick={onClick}
+      aria-label="Zoom"
       title="Zoom"
     >
       {/* Placeholder icon — will be replaced */}
@@ -413,8 +417,10 @@ function CodeBlockCopyButton({ code, themed = false }: { code: string; themed?: 
 
   return (
     <button
+      type="button"
       className={`absolute right-2 top-2 flex items-center justify-center rounded-md p-1 cursor-pointer transition-all duration-150 border ${colorStyle} ${copied ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
       onClick={handleCopy}
+      aria-label="Copy code"
       title="Copy code"
     >
       {copied ? (
@@ -485,7 +491,15 @@ function FrontmatterBlock({ yaml }: { yaml: string }) {
   );
 }
 
-function HighlightedView({ content, language }: { content: string; language: string }) {
+function HighlightedView({
+  content,
+  language,
+  wrap = false,
+}: {
+  content: string;
+  language: string;
+  wrap?: boolean;
+}) {
   const [html, setHtml] = useState("");
 
   useEffect(() => {
@@ -510,17 +524,33 @@ function HighlightedView({ content, language }: { content: string; language: str
   }, [content, language]);
 
   if (html) {
-    return <div className="[&_pre]:!rounded-none" dangerouslySetInnerHTML={{ __html: html }} />;
+    return (
+      <div
+        className={`[&_pre]:!rounded-none${wrap ? " [&_pre]:!whitespace-pre-wrap [&_pre]:!break-words [&_code]:!whitespace-pre-wrap" : ""}`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
   }
   return (
-    <pre>
+    <pre className={wrap ? "whitespace-pre-wrap break-words" : undefined}>
       <code>{content}</code>
     </pre>
   );
 }
 
 function RawView({ content }: { content: string }) {
-  return <HighlightedView content={content} language="markdown" />;
+  return <HighlightedView content={content} language="markdown" wrap />;
+}
+
+function currentHashTargetId(): string | null {
+  const hash = window.location.hash;
+  if (!hash || hash === "#") return null;
+  const raw = hash.slice(1);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 export function MarkdownViewer({
@@ -547,6 +577,7 @@ export function MarkdownViewer({
   const [isRawView, setIsRawView] = useState(false);
   const [searchHitMarkers, setSearchHitMarkers] = useState<SearchHitMarker[]>([]);
   const articleRef = useRef<HTMLElement>(null);
+  const lastHashScrollKey = useRef("");
   const [prevFetchKey, setPrevFetchKey] = useState({ fileId, revision });
 
   if (fileId !== prevFetchKey.fileId || revision !== prevFetchKey.revision) {
@@ -576,6 +607,7 @@ export function MarkdownViewer({
 
   const handleLinkClick = useCallback(
     async (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+      if (!isPlainLeftClick(e)) return;
       e.preventDefault();
       try {
         const entry = await openRelativeFile(activeGroup, fileId, href);
@@ -752,6 +784,21 @@ export function MarkdownViewer({
       onContentRenderedRef.current?.();
     }
   }, [loading, renderedContent]);
+
+  useLayoutEffect(() => {
+    if (loading || !articleRef.current || !isMarkdown || isRawView) {
+      return;
+    }
+    const id = currentHashTargetId();
+    if (!id) return;
+    const key = `${fileId}:${revision}:${id}`;
+    if (lastHashScrollKey.current === key) return;
+    const target = document.getElementById(id);
+    if (target) {
+      target.scrollIntoView({ behavior: "auto", block: "start" });
+      lastHashScrollKey.current = key;
+    }
+  }, [loading, renderedContent, isMarkdown, isRawView, fileId, revision]);
 
   useLayoutEffect(() => {
     if (loading || !scrollToHeading || !articleRef.current) {

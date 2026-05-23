@@ -6,7 +6,7 @@ import { isPlainLeftClick } from "../utils/linkClick";
 import { FileContextMenu } from "./FileContextMenu";
 import { FileIcon } from "./FileIcon";
 
-const COLLAPSED_STORAGE_KEY = "mo-sidebar-tree-collapsed";
+const COLLAPSED_STORAGE_KEY = "po-sidebar-tree-collapsed";
 
 function getInitialCollapsed(group: string): Set<string> {
   try {
@@ -183,9 +183,13 @@ function TreeNodeItem({
   return (
     <div>
       <button
+        type="button"
         className="flex items-center gap-1.5 w-full px-3 py-1.5 border-none cursor-pointer text-left text-sm bg-transparent text-gh-text-secondary hover:bg-gh-bg-hover transition-colors duration-150"
         style={{ paddingLeft: `${depth * 16 + 12}px` }}
         onClick={() => onToggleCollapse(node.fullPath)}
+        aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${node.name}`}
+        aria-expanded={!isCollapsed}
+        title={`${isCollapsed ? "Expand" : "Collapse"} ${node.name}`}
       >
         {/* Chevron */}
         <svg

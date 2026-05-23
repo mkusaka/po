@@ -53,8 +53,12 @@ export function GroupDropdown({ groups, activeGroup, onGroupChange }: GroupDropd
   return (
     <div ref={ref} className="relative">
       <button
+        type="button"
         className="flex items-center gap-1.5 bg-transparent border border-gh-border rounded-md p-1.5 cursor-pointer text-sm text-gh-header-text hover:bg-gh-bg-hover transition-colors duration-150"
         onClick={() => setOpen((v) => !v)}
+        aria-label="Switch group"
+        title="Switch group"
+        aria-expanded={open}
       >
         <svg
           className="size-5 shrink-0"
@@ -99,6 +103,7 @@ export function GroupDropdown({ groups, activeGroup, onGroupChange }: GroupDropd
               })
               .map((g) => (
                 <button
+                  type="button"
                   key={g.name}
                   className={`flex items-center gap-2 w-full px-3 py-1.5 border-none cursor-pointer text-left text-xs transition-colors duration-150 ${
                     g.name === activeGroup

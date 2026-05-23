@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/k1LoW/mo/internal/server"
+	"github.com/mkusaka/po/internal/server"
 )
 
 func TestRun_UnwatchWithWatch(t *testing.T) {

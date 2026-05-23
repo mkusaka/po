@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/k1LoW/mo/internal/xdg"
+	"github.com/mkusaka/po/internal/xdg"
 )
 
-const logFilePrefix = "mo-"
+const logFilePrefix = "po-"
 
 const (
 	maxSize    = 10 * 1024 * 1024 // 10MB
@@ -26,10 +26,10 @@ func Dir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(stateHome, "mo", "log"), nil
+	return filepath.Join(stateHome, "po", "log"), nil
 }
 
-// Setup configures slog to write to a rotating log file under XDG_STATE_HOME/mo/log/.
+// Setup configures slog to write to a rotating log file under XDG_STATE_HOME/po/log/.
 // Returns a cleanup function that closes the log file.
 func Setup(port int) (func(), error) {
 	dir, err := Dir()
@@ -42,7 +42,7 @@ func Setup(port int) (func(), error) {
 
 	cleanOldLogs(dir, maxAge)
 
-	filename := filepath.Join(dir, fmt.Sprintf("mo-%d.log", port))
+	filename := filepath.Join(dir, fmt.Sprintf("po-%d.log", port))
 	w, err := newRotatingWriter(filename, maxSize, maxBackups)
 	if err != nil {
 		return nil, err

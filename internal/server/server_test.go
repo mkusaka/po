@@ -27,6 +27,25 @@ var (
 	testIDc = FileID("/c.md")
 )
 
+func TestFileIDUsesRelativePath(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, "docs", "a.md")
+	rel := filepath.Join("docs", "a.md")
+
+	t.Chdir(root)
+	want := FileID(rel)
+	if got := FileID(abs); got != want {
+		t.Fatalf("FileID(abs path) = %q, want hash of relative path %q (%q)", got, rel, want)
+	}
+
+	otherRoot := t.TempDir()
+	otherAbs := filepath.Join(otherRoot, "docs", "a.md")
+	t.Chdir(otherRoot)
+	if got := FileID(otherAbs); got != want {
+		t.Fatalf("FileID should be stable for the same relative path in another root: got %q, want %q", got, want)
+	}
+}
+
 func newTestState(t *testing.T) *State {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())

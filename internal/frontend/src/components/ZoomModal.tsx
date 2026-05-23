@@ -85,6 +85,7 @@ export function ZoomModal({ content, onClose }: ZoomModalProps) {
         className="absolute top-4 right-4 z-10 flex items-center justify-center rounded-md p-2 cursor-pointer text-white/70 hover:text-white transition-colors duration-150"
         onClick={onClose}
         aria-label="Close"
+        title="Close zoom viewer"
       >
         <svg
           className="size-6"

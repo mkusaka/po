@@ -23,8 +23,8 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/gofsnotify/fsnotify"
 	"github.com/k1LoW/donegroup"
-	"github.com/k1LoW/mo/internal/static"
-	"github.com/k1LoW/mo/version"
+	"github.com/mkusaka/po/internal/static"
+	"github.com/mkusaka/po/version"
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 )
@@ -145,10 +145,20 @@ func extractTitleFromFile(path string) (string, bool) {
 	return extractTitle(string(data)), true
 }
 
-// FileID generates a deterministic file ID from an absolute path.
+// FileID generates a deterministic file ID from a path relative to the
+// current working directory.
 // The ID is the first 8 characters of the SHA-256 hex digest.
-func FileID(absPath string) string {
-	h := sha256.Sum256([]byte(absPath))
+func FileID(path string) string {
+	source := filepath.Clean(path)
+	if filepath.IsAbs(path) {
+		if wd, err := os.Getwd(); err == nil {
+			if rel, err := filepath.Rel(wd, path); err == nil {
+				source = rel
+			}
+		}
+	}
+	source = filepath.ToSlash(source)
+	h := sha256.Sum256([]byte(source))
 	return hex.EncodeToString(h[:])[:8]
 }
 
@@ -779,7 +789,7 @@ type RestoreData struct {
 
 // WriteRestoreFile writes RestoreData to a temporary file and returns the path.
 func WriteRestoreFile(data RestoreData) (string, error) {
-	f, err := os.CreateTemp("", "mo-restore-*.json")
+	f, err := os.CreateTemp("", "po-restore-*.json")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}

@@ -38,15 +38,17 @@ export function RestartButton() {
   }, [status]);
 
   const title = version
-    ? `mo ${version.version} (${version.revision})\nClick to restart`
+    ? `po ${version.version} (${version.revision})\nClick to restart`
     : "Restart server";
 
   return (
     <>
       <button
+        type="button"
         className="fixed bottom-4 right-4 flex items-center justify-center bg-transparent border border-gh-border rounded-md p-1.5 text-gh-text-secondary cursor-pointer transition-colors duration-150 hover:bg-gh-bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
         onClick={handleClick}
         disabled={status === "restarting"}
+        aria-label="Restart server"
         title={title}
       >
         <svg

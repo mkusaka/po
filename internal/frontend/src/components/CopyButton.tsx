@@ -64,8 +64,10 @@ export function CopyButton({ content }: CopyButtonProps) {
   return (
     <div ref={ref} className="relative">
       <button
+        type="button"
         className="flex items-center justify-center bg-transparent border border-gh-border rounded-md p-1.5 text-gh-text-secondary cursor-pointer transition-colors duration-150 hover:bg-gh-bg-hover"
         onClick={() => setOpen((v) => !v)}
+        aria-label="Copy content"
         title="Copy content"
       >
         {copied ? (
@@ -98,6 +100,7 @@ export function CopyButton({ content }: CopyButtonProps) {
         <div className="absolute right-0 top-full mt-1 min-w-44 bg-gh-bg-sidebar border border-gh-border rounded-md shadow-lg z-10 py-1">
           {formats.map((f) => (
             <button
+              type="button"
               key={f.key}
               className="flex items-center w-full px-3 py-1.5 border-none cursor-pointer text-left text-xs bg-transparent text-gh-text-secondary hover:bg-gh-bg-hover transition-colors duration-150"
               onClick={() => handleCopy(f.key)}

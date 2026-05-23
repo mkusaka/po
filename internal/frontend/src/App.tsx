@@ -29,11 +29,11 @@ import {
 } from "./utils/groups";
 import { isMarkdownFile } from "./utils/filetype";
 
-const VIEWMODE_STORAGE_KEY = "mo-sidebar-viewmode";
-const WIDTH_STORAGE_KEY = "mo-layout-width";
-const SHOW_TITLE_STORAGE_KEY = "mo-sidebar-show-title";
-export const FONT_SIZE_STORAGE_KEY = "mo-font-size";
-export const TOC_OPEN_STORAGE_KEY = "mo-toc-open";
+const VIEWMODE_STORAGE_KEY = "po-sidebar-viewmode";
+const WIDTH_STORAGE_KEY = "po-layout-width";
+const SHOW_TITLE_STORAGE_KEY = "po-sidebar-show-title";
+export const FONT_SIZE_STORAGE_KEY = "po-font-size";
+export const TOC_OPEN_STORAGE_KEY = "po-toc-open";
 
 export function getInitialFontSize(): FontSize {
   try {
@@ -63,10 +63,10 @@ export function getInitialTocOpenMap(): Record<string, boolean> {
 }
 
 export function formatTitle(fileEntry: Pick<FileEntry, "name" | "title"> | undefined): string {
-  if (fileEntry == undefined) return "mo";
+  if (fileEntry == undefined) return "po";
   const { name, title } = fileEntry;
   const fullTitle = title === undefined ? name : `${title} - ${name}`;
-  return `${fullTitle} | mo`;
+  return `${fullTitle} | po`;
 }
 
 export function isTocOpenForFile(
@@ -431,6 +431,11 @@ export function App() {
     const el = document.getElementById(id);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+    window.history.pushState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}#${encodeURIComponent(id)}`,
+    );
   }, []);
 
   const handleZoom = useCallback((content: ZoomContent) => {

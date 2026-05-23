@@ -1,4 +1,4 @@
-module github.com/k1LoW/mo
+module github.com/mkusaka/po
 
 go 1.26.0
 
