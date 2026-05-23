@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FileEntry, Group } from "../hooks/useApi";
 import { buildTree, type TreeNode } from "../utils/buildTree";
-import { buildFileUrl } from "../utils/groups";
+import { buildFileEntryUrl } from "../utils/groups";
 import { isPlainLeftClick } from "../utils/linkClick";
 import { FileContextMenu } from "./FileContextMenu";
 import { FileIcon } from "./FileIcon";
@@ -278,7 +278,7 @@ function FileNodeItem({
   return (
     <div className="relative group/file">
       <a
-        href={buildFileUrl(activeGroup, file.id)}
+        href={buildFileEntryUrl(activeGroup, file)}
         className={`flex items-center gap-2 w-full px-3 py-2 border-none cursor-pointer text-left text-sm no-underline transition-colors duration-150 ${
           isActive
             ? "bg-gh-bg-active text-gh-text font-semibold"
@@ -290,7 +290,7 @@ function FileNodeItem({
           e.preventDefault();
           onFileSelect(file.id);
         }}
-        title={file.uploaded ? file.name : file.path}
+        title={file.uploaded ? file.name : (file.relativePath ?? file.path)}
         aria-current={isActive ? "page" : undefined}
       >
         <FileIcon uploaded={file.uploaded} />

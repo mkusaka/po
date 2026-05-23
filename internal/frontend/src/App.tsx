@@ -26,6 +26,8 @@ import {
   parseFileIdFromSearch,
   groupToPath,
   buildFileUrl,
+  buildFileEntryUrl,
+  resolveFileParam,
 } from "./utils/groups";
 import { isMarkdownFile } from "./utils/filetype";
 
@@ -120,7 +122,7 @@ export function App() {
   });
   const [fontSize, setFontSize] = useState<FontSize>(getInitialFontSize);
   const knownFileIds = useRef<Set<string>>(new Set());
-  const [initialFileId, setInitialFileId] = useState<string | null>(() => {
+  const [pendingFileParam, setPendingFileParam] = useState<string | null>(() => {
     const fromUrl = parseFileIdFromSearch(window.location.search);
     if (fromUrl) return fromUrl;
     // Restore active file from scroll context saved before reload
@@ -141,11 +143,17 @@ export function App() {
   // Track previous values for render-time state adjustment
   const [prevGroups, setPrevGroups] = useState<Group[]>([]);
   const [prevActiveGroup, setPrevActiveGroup] = useState(activeGroup);
+  const [prevPendingFileParam, setPrevPendingFileParam] = useState(pendingFileParam);
 
   // Adjust derived state during render when groups or activeGroup changes
-  if (groups !== prevGroups || activeGroup !== prevActiveGroup) {
+  if (
+    groups !== prevGroups ||
+    activeGroup !== prevActiveGroup ||
+    pendingFileParam !== prevPendingFileParam
+  ) {
     setPrevGroups(groups);
     setPrevActiveGroup(activeGroup);
+    setPrevPendingFileParam(pendingFileParam);
 
     // Active file selection and sidebar auto open/close
     const group = groups.find((g) => g.name === activeGroup);
@@ -162,11 +170,10 @@ export function App() {
       setActiveGroup(sortedGroups[0].name);
     } else if (group.files.length === 0) {
       setActiveFileId(null);
-    } else if (initialFileId != null) {
-      setInitialFileId(null);
-      setActiveFileId(
-        group.files.some((f) => f.id === initialFileId) ? initialFileId : group.files[0].id,
-      );
+    } else if (pendingFileParam != null) {
+      setPendingFileParam(null);
+      const initialFile = resolveFileParam(group.files, pendingFileParam);
+      setActiveFileId(initialFile?.id ?? group.files[0].id);
     } else {
       setActiveFileId((prev) => {
         if (group.files.some((f) => f.id === prev)) return prev;
@@ -223,19 +230,19 @@ export function App() {
   // the call site. This effect only reconciles the URL with state for automatic
   // changes (initial mount, SSE updates, render-time fallbacks) via replaceState.
   useEffect(() => {
-    // initialFileId hasn't been consumed yet — keep the URL as the user landed.
-    if (initialFileId != null) return;
-    const expectedUrl = activeFileId
-      ? buildFileUrl(activeGroup, activeFileId)
-      : groupToPath(activeGroup);
+    // pendingFileParam hasn't been consumed yet — keep the URL as the user landed.
+    if (pendingFileParam != null) return;
+    const group = groups.find((g) => g.name === activeGroup);
+    const file = group?.files.find((f) => f.id === activeFileId);
+    const expectedUrl = file ? buildFileEntryUrl(activeGroup, file) : groupToPath(activeGroup);
     if (window.location.pathname + window.location.search === expectedUrl) return;
     window.history.replaceState(null, "", expectedUrl);
-  }, [activeGroup, activeFileId, initialFileId]);
+  }, [activeGroup, activeFileId, groups, pendingFileParam]);
 
   useEffect(() => {
     const handlePopState = () => {
       setActiveGroup(parseGroupFromPath(window.location.pathname));
-      setActiveFileId(parseFileIdFromSearch(window.location.search));
+      setPendingFileParam(parseFileIdFromSearch(window.location.search));
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -372,28 +379,46 @@ export function App() {
 
   const handleFileSelect = useCallback(
     (fileId: string) => {
-      window.history.pushState(null, "", buildFileUrl(activeGroup, fileId));
+      const file = groups.find((g) => g.name === activeGroup)?.files.find((f) => f.id === fileId);
+      window.history.pushState(
+        null,
+        "",
+        file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, fileId),
+      );
       setActiveFileId(fileId);
     },
-    [activeGroup],
+    [activeGroup, groups],
   );
 
   const handleFileOpened = useCallback(
-    (fileId: string) => {
-      window.history.pushState(null, "", buildFileUrl(activeGroup, fileId));
+    (openedFile: Pick<FileEntry, "id" | "relativePath">) => {
+      const fileId = openedFile.id;
+      const file =
+        groups.find((g) => g.name === activeGroup)?.files.find((f) => f.id === fileId) ??
+        openedFile;
+      window.history.pushState(
+        null,
+        "",
+        file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, fileId),
+      );
       setActiveFileId(fileId);
       setPendingSearchHeading(null);
     },
-    [activeGroup],
+    [activeGroup, groups],
   );
 
   const handleSearchResultSelect = useCallback(
     (fileId: string, heading?: string) => {
-      window.history.pushState(null, "", buildFileUrl(activeGroup, fileId));
+      const file = groups.find((g) => g.name === activeGroup)?.files.find((f) => f.id === fileId);
+      window.history.pushState(
+        null,
+        "",
+        file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, fileId),
+      );
       setActiveFileId(fileId);
       setPendingSearchHeading(heading || null);
     },
-    [activeGroup],
+    [activeGroup, groups],
   );
 
   const handleRemoveFile = useCallback(() => {

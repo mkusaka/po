@@ -65,6 +65,8 @@ var (
 	clearBackup                  bool
 	jsonOutput                   bool
 	dangerouslyAllowRemoteAccess bool
+	repo                         string
+	currentRepoScope             server.RepoScope
 )
 
 var rootCmd = &cobra.Command{
@@ -94,6 +96,12 @@ Single Server, Multiple Files:
   To run a completely separate session, use a different port:
 
   $ po draft.md -p 6276
+
+Repository-scoped URLs:
+  Use --repo to make URLs address files by their path relative to the current
+  Git repository. The URL path becomes the repository name.
+
+  $ po --repo README.md    # Opens /po?file=README.md
 
 Groups:
   Files can be organized into named groups using the --target (-t) flag.
@@ -200,6 +208,8 @@ func init() {
 	rootCmd.Flags().BoolVar(&closeFiles, "close", false, "Close files instead of opening them")
 	rootCmd.Flags().BoolVar(&clearBackup, "clear", false, "Clear saved session for the specified port")
 	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output structured data as JSON to stdout")
+	rootCmd.Flags().StringVar(&repo, "repo", "", "Use Git repository-scoped URLs; optional value is a path inside the repo")
+	rootCmd.Flags().Lookup("repo").NoOptDefVal = "."
 	rootCmd.Flags().BoolVar(&dangerouslyAllowRemoteAccess, "dangerously-allow-remote-access", false, "Allow remote access without authentication. Recommended only for trusted networks.")
 }
 
@@ -215,6 +225,20 @@ func run(cmd *cobra.Command, args []string) error {
 
 	bind = strings.Trim(bind, "[]")
 	addr := net.JoinHostPort(bind, strconv.Itoa(port))
+
+	repoFlagChanged := cmd.Flags().Changed("repo")
+	targetFlagChanged := cmd.Flags().Changed("target")
+	currentRepoScope = server.RepoScope{}
+	if repoFlagChanged {
+		scope, err := resolveRepoScope(repo)
+		if err != nil {
+			return err
+		}
+		currentRepoScope = scope
+		if !targetFlagChanged && target == server.DefaultGroup {
+			target = scope.Name
+		}
+	}
 
 	if clearBackup {
 		wasServerRunning := false
@@ -326,10 +350,17 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	if restore != "" {
-		filesByGroup, patternsByGroup, uploadedFiles, err := loadRestoreData(restore)
+		rd, err := loadRestoreData(restore)
 		if err != nil {
 			return fmt.Errorf("failed to restore state: %w", err)
 		}
+		if !repoFlagChanged && rd.RepoScope != nil {
+			currentRepoScope = *rd.RepoScope
+			if !targetFlagChanged && target == server.DefaultGroup {
+				target = currentRepoScope.Name
+			}
+		}
+		filesByGroup, patternsByGroup, uploadedFiles := filterValidRestoreData(&rd)
 		return startServer(cmd.Context(), addr, filesByGroup, patternsByGroup, uploadedFiles)
 	}
 
@@ -424,16 +455,21 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	filesByGroup := map[string][]string{target: files}
-	var patternsByGroup map[string][]string
-	if len(patterns) > 0 {
-		patternsByGroup = map[string][]string{target: patterns}
-	}
-
 	// Restore backup and merge with specified files/patterns
 	var rd server.RestoreData
 	if err := backup.Load(port, &rd); err != nil {
 		slog.Warn("failed to load backup", "error", err)
+	}
+	if !repoFlagChanged && rd.RepoScope != nil {
+		currentRepoScope = *rd.RepoScope
+		if !targetFlagChanged && target == server.DefaultGroup {
+			target = currentRepoScope.Name
+		}
+	}
+	filesByGroup := map[string][]string{target: files}
+	var patternsByGroup map[string][]string
+	if len(patterns) > 0 {
+		patternsByGroup = map[string][]string{target: patterns}
 	}
 	restoredFiles, restoredPatterns, restoredUploads := filterValidRestoreData(&rd)
 	var uploadedFiles []server.UploadedFileData
@@ -447,6 +483,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// Append stdin content to uploaded files for the new server.
 	if stdinData != nil {
+		stdinData.Group = target
 		uploadedFiles = append(uploadedFiles, *stdinData)
 	}
 
@@ -512,6 +549,31 @@ func mergeGroups(base, additional map[string][]string) map[string][]string {
 	return merged
 }
 
+func resolveRepoScope(repoPath string) (server.RepoScope, error) {
+	if repoPath == "" {
+		repoPath = "."
+	}
+	abs, err := filepath.Abs(repoPath)
+	if err != nil {
+		return server.RepoScope{}, fmt.Errorf("cannot resolve repo path %s: %w", repoPath, err)
+	}
+	if info, err := os.Stat(abs); err == nil && !info.IsDir() {
+		abs = filepath.Dir(abs)
+	}
+	out, err := exec.Command("git", "-C", abs, "rev-parse", "--show-toplevel").Output() //nolint:gosec
+	if err != nil {
+		return server.RepoScope{}, fmt.Errorf("cannot find git repository root from %s", repoPath)
+	}
+	root := strings.TrimSpace(string(out))
+	if root == "" {
+		return server.RepoScope{}, fmt.Errorf("cannot find git repository root from %s", repoPath)
+	}
+	return server.RepoScope{
+		Root: filepath.Clean(root),
+		Name: filepath.Base(root),
+	}, nil
+}
+
 // filterValidRestoreData validates restore data by checking that file paths still exist.
 func filterValidRestoreData(rd *server.RestoreData) (map[string][]string, map[string][]string, []server.UploadedFileData) {
 	filesByGroup := make(map[string][]string)
@@ -531,18 +593,18 @@ func filterValidRestoreData(rd *server.RestoreData) (map[string][]string, map[st
 	return filesByGroup, patternsByGroup, rd.UploadedFiles
 }
 
-func loadRestoreData(path string) (map[string][]string, map[string][]string, []server.UploadedFileData, error) {
+func loadRestoreData(path string) (server.RestoreData, error) {
 	data, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
-		return nil, nil, nil, err
+		return server.RestoreData{}, err
 	}
 	os.Remove(path)
 
 	var rd server.RestoreData
 	if err := json.Unmarshal(data, &rd); err != nil {
-		return nil, nil, nil, err
+		return server.RestoreData{}, err
 	}
-	return rd.Groups, rd.Patterns, rd.UploadedFiles, nil
+	return rd, nil
 }
 
 func isLoopbackBind(bind string) bool {
@@ -752,7 +814,7 @@ func postFiles(client *http.Client, addr, group string, files []string) []deepli
 		}
 		resp.Body.Close()
 		entries = append(entries, deeplinkEntry{
-			URL:  buildDeeplink(addr, group, entry.ID),
+			URL:  buildDeeplink(addr, group, deeplinkFileParam(&entry)),
 			Path: entry.Path,
 		})
 	}
@@ -793,7 +855,7 @@ func postPatterns(client *http.Client, addr, group string, patterns []string) []
 		resp.Body.Close()
 		for _, f := range patResp.Files {
 			entries = append(entries, deeplinkEntry{
-				URL:  buildDeeplink(addr, group, f.ID),
+				URL:  buildDeeplink(addr, group, deeplinkFileParam(f)),
 				Path: f.Path,
 			})
 		}
@@ -855,11 +917,36 @@ func deeplinksToJSON(entries []deeplinkEntry) []jsonFileEntry {
 	return result
 }
 
-func buildDeeplink(addr, groupName, fileID string) string {
+func buildDeeplink(addr, groupName, fileParam string) string {
+	query := "file=" + encodeFileParam(fileParam)
 	if groupName == server.DefaultGroup {
-		return fmt.Sprintf("http://%s/?file=%s", addr, fileID)
+		return fmt.Sprintf("http://%s/?%s", addr, query)
 	}
-	return fmt.Sprintf("http://%s/%s?file=%s", addr, groupName, fileID)
+	return fmt.Sprintf("http://%s/%s?%s", addr, groupName, query)
+}
+
+func encodeFileParam(fileParam string) string {
+	return strings.ReplaceAll(url.QueryEscape(fileParam), "%2F", "/")
+}
+
+func deeplinkFileParam(entry *server.FileEntry) string {
+	if entry.RelativePath != "" {
+		return entry.RelativePath
+	}
+	return entry.ID
+}
+
+func deeplinkStatusFileParam(entry struct {
+	Name string `json:"name"`
+	ID   string `json:"id"`
+	Path string `json:"path"`
+}) string {
+	if currentRepoScope.Enabled() {
+		if rel, err := filepath.Rel(currentRepoScope.Root, entry.Path); err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return entry.ID
 }
 
 // displayNames computes short display names for file paths, adding parent
@@ -1308,6 +1395,7 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 	defer cleanup()
 
 	state := server.NewState(ctx)
+	state.SetRepoScope(currentRepoScope)
 
 	state.EnableBackup(ctx, func(data server.RestoreData) {
 		if err := backup.Save(port, data); err != nil {
@@ -1327,7 +1415,7 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 				continue
 			}
 			deeplinks = append(deeplinks, deeplinkEntry{
-				URL:  buildDeeplink(addr, group, entry.ID),
+				URL:  buildDeeplink(addr, group, deeplinkFileParam(entry)),
 				Path: entry.Path,
 			})
 		}
@@ -1343,7 +1431,7 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 			patternsAdded++
 			for _, entry := range entries {
 				deeplinks = append(deeplinks, deeplinkEntry{
-					URL:  buildDeeplink(addr, group, entry.ID),
+					URL:  buildDeeplink(addr, group, deeplinkFileParam(entry)),
 					Path: entry.Path,
 				})
 			}
@@ -1420,6 +1508,9 @@ func spawnNewProcess(addr string, restoreFile string) (*os.Process, error) {
 	}
 
 	args := []string{"--port", p, "--bind", h, "--no-open", "--foreground"}
+	if currentRepoScope.Enabled() {
+		args = append(args, "--repo", currentRepoScope.Root)
+	}
 	if restoreFile != "" {
 		args = append(args, "--restore", restoreFile)
 	}
@@ -1437,7 +1528,12 @@ func spawnNewProcess(addr string, restoreFile string) (*os.Process, error) {
 }
 
 func startBackground(addr string, filesByGroup map[string][]string, patternsByGroup map[string][]string, uploadedFiles []server.UploadedFileData) error {
-	restoreFile, err := server.WriteRestoreFile(server.RestoreData{Groups: filesByGroup, Patterns: patternsByGroup, UploadedFiles: uploadedFiles})
+	rd := server.RestoreData{Groups: filesByGroup, Patterns: patternsByGroup, UploadedFiles: uploadedFiles}
+	if currentRepoScope.Enabled() {
+		scope := currentRepoScope
+		rd.RepoScope = &scope
+	}
+	restoreFile, err := server.WriteRestoreFile(rd)
 	if err != nil {
 		return err
 	}
@@ -1463,7 +1559,7 @@ func startBackground(addr string, filesByGroup map[string][]string, patternsByGr
 		for _, g := range status.Groups {
 			for _, f := range g.Files {
 				deeplinks = append(deeplinks, deeplinkEntry{
-					URL:  buildDeeplink(addr, g.Name, f.ID),
+					URL:  buildDeeplink(addr, g.Name, deeplinkStatusFileParam(f)),
 					Path: f.Path,
 					Name: f.Name,
 				})

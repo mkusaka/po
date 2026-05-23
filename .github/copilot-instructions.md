@@ -44,6 +44,7 @@ make ci
 
 - `--port` / `-p` — Server port (default: 6275)
 - `--target` / `-t` — Tab group name (default: `"default"`)
+- `--repo[=PATH]` — Use Git repository-scoped URLs (`/repo-name?file=relative/path`); defaults to the current repo when no value is given
 - `--open` — Always open browser
 - `--no-open` — Never open browser
 - `--watch` / `-w` — Boolean flag that turns on watch mode; directory and glob positional arguments are registered as watch patterns

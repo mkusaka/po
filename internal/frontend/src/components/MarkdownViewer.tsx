@@ -11,6 +11,7 @@ import "katex/dist/katex.min.css";
 import { codeToHtml } from "shiki";
 import mermaid from "mermaid";
 import { fetchFileContent, openRelativeFile } from "../hooks/useApi";
+import type { FileEntry } from "../hooks/useApi";
 import { isPlainLeftClick } from "../utils/linkClick";
 import { escapeRegExp } from "../utils/regex";
 import { RawToggle } from "./RawToggle";
@@ -67,7 +68,7 @@ interface MarkdownViewerProps {
   fileName: string;
   activeGroup: string;
   revision: number;
-  onFileOpened: (fileId: string) => void;
+  onFileOpened: (file: Pick<FileEntry, "id" | "relativePath">) => void;
   onHeadingsChange: (headings: TocHeading[]) => void;
   onContentRendered?: () => void;
   isTocOpen: boolean;
@@ -611,7 +612,7 @@ export function MarkdownViewer({
       e.preventDefault();
       try {
         const entry = await openRelativeFile(activeGroup, fileId, href);
-        onFileOpened(entry.id);
+        onFileOpened(entry);
       } catch {
         // fallback: do nothing
       }

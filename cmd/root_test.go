@@ -449,6 +449,8 @@ func TestBuildDeeplink(t *testing.T) {
 	}{
 		{"localhost:6275", server.DefaultGroup, "abc12345", "http://localhost:6275/?file=abc12345"},
 		{"localhost:6275", "design", "def67890", "http://localhost:6275/design?file=def67890"},
+		{"localhost:6275", "po", "docs/guide.md", "http://localhost:6275/po?file=docs/guide.md"},
+		{"localhost:6275", "po", "docs/space guide.md", "http://localhost:6275/po?file=docs/space+guide.md"},
 	}
 	for _, tt := range tests {
 		got := buildDeeplink(tt.addr, tt.groupName, tt.fileID)

@@ -16,7 +16,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { FileEntry, Group, SearchResult } from "../hooks/useApi";
 import { removeFile, moveFile } from "../hooks/useApi";
-import { buildFileUrl } from "../utils/groups";
+import { buildFileEntryUrl, buildFileUrl } from "../utils/groups";
 import { isPlainLeftClick } from "../utils/linkClick";
 import { escapeRegExp } from "../utils/regex";
 import type { ViewMode } from "./ViewModeToggle";
@@ -91,7 +91,7 @@ function FileItem({
   return (
     <div className="relative group/file">
       <a
-        href={buildFileUrl(activeGroup, file.id)}
+        href={buildFileEntryUrl(activeGroup, file)}
         className={`flex items-center gap-2 w-full px-3 py-2 border-none cursor-pointer text-left text-sm no-underline transition-colors duration-150 ${
           isActive
             ? "bg-gh-bg-active text-gh-text font-semibold"
@@ -102,7 +102,7 @@ function FileItem({
           e.preventDefault();
           onFileSelect(file.id);
         }}
-        title={file.uploaded ? file.name : file.path}
+        title={file.uploaded ? file.name : (file.relativePath ?? file.path)}
         aria-current={isActive ? "page" : undefined}
       >
         <FileIcon uploaded={file.uploaded} />
@@ -273,9 +273,13 @@ export function Sidebar({
   const handleOpenInNewTab = useCallback(
     (id: string) => {
       setMenuOpenId(null);
-      window.open(buildFileUrl(activeGroup, id), "_blank");
+      const file = files.find((f) => f.id === id);
+      window.open(
+        file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, id),
+        "_blank",
+      );
     },
-    [activeGroup],
+    [activeGroup, files],
   );
 
   const otherGroups = useMemo(() => {
@@ -308,10 +312,14 @@ export function Sidebar({
   const handleCopyLink = useCallback(
     (id: string) => {
       setMenuOpenId(null);
-      const url = new URL(buildFileUrl(activeGroup, id), window.location.origin);
+      const file = files.find((f) => f.id === id);
+      const url = new URL(
+        file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, id),
+        window.location.origin,
+      );
       navigator.clipboard.writeText(url.toString()).catch(() => {});
     },
-    [activeGroup],
+    [activeGroup, files],
   );
 
   const handleRemove = useCallback(
@@ -367,7 +375,10 @@ export function Sidebar({
                     result.matches.map((match, index) => (
                       <a
                         key={`${result.fileId}:${match.line}:${index}`}
-                        href={buildFileUrl(activeGroup, result.fileId)}
+                        href={buildFileEntryUrl(activeGroup, {
+                          id: result.fileId,
+                          relativePath: result.relativePath,
+                        })}
                         className="w-full px-3 py-2 text-left border-none bg-transparent cursor-pointer no-underline text-gh-text-secondary transition-colors duration-150 hover:bg-gh-bg-hover"
                         onClick={(e) => {
                           if (!isPlainLeftClick(e)) return;

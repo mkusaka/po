@@ -32,7 +32,7 @@ export function buildTree(files: FileEntry[]): TreeNode {
   }
 
   // Split each file path into segments once
-  const splitPaths = fsFiles.map((f) => f.path.split("/"));
+  const splitPaths = fsFiles.map((f) => (f.relativePath ?? f.path).split("/"));
   const dirSegmentsList = splitPaths.map((parts) => parts.slice(0, -1));
 
   // Find common prefix among directory parts

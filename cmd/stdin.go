@@ -87,7 +87,7 @@ func postUploadedFile(client *http.Client, addr, group, name, content string) (d
 		return deeplinkEntry{}, err
 	}
 	return deeplinkEntry{
-		URL:  buildDeeplink(addr, group, entry.ID),
+		URL:  buildDeeplink(addr, group, deeplinkFileParam(&entry)),
 		Name: entry.Name,
 	}, nil
 }

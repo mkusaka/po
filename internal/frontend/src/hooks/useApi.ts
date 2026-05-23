@@ -2,6 +2,7 @@ export interface FileEntry {
   name: string;
   id: string;
   path: string;
+  relativePath?: string;
   title?: string;
   uploaded?: boolean;
 }
@@ -41,6 +42,7 @@ export interface SearchResult {
   fileName: string;
   title?: string;
   path: string;
+  relativePath?: string;
   uploaded: boolean;
   matches: SearchMatch[];
 }

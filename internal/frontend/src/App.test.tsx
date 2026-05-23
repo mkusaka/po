@@ -122,6 +122,17 @@ describe("App URL sync", () => {
       name: "design",
       files: [{ id: "ccc33333", name: "spec.md", path: "/design/spec.md" }],
     },
+    {
+      name: "po",
+      files: [
+        {
+          id: "ddd44444",
+          name: "guide.md",
+          path: "/repo/docs/guide.md",
+          relativePath: "docs/guide.md",
+        },
+      ],
+    },
   ];
 
   function mockFetch() {
@@ -193,6 +204,16 @@ describe("App URL sync", () => {
     });
     // URL is preserved (no push, no clear).
     expect(window.location.search).toBe("?file=bbb22222");
+  });
+
+  it("hydrates the active file from a repository-relative file path", async () => {
+    setUrl("/po?file=docs/guide.md");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("viewer")).toHaveTextContent("ddd44444");
+    });
+    expect(window.location.pathname + window.location.search).toBe("/po?file=docs/guide.md");
   });
 
   it("falls back to the first file when ?file= references an unknown id", async () => {

@@ -46,6 +46,51 @@ func TestFileIDUsesRelativePath(t *testing.T) {
 	}
 }
 
+func TestAddFileWithRepoScope(t *testing.T) {
+	ctx, cancel := donegroup.WithCancel(context.Background())
+	defer cancel()
+
+	root := t.TempDir()
+	docs := filepath.Join(root, "docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(docs, "guide.md")
+	if err := os.WriteFile(path, []byte("# Guide"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewState(ctx)
+	s.SetRepoScope(RepoScope{Root: root, Name: "repo"})
+	entry, err := s.AddFile(path, DefaultGroup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.RelativePath != "docs/guide.md" {
+		t.Fatalf("got relativePath %q, want docs/guide.md", entry.RelativePath)
+	}
+	if entry.ID != FileID("docs/guide.md") {
+		t.Fatalf("got id %q, want repo-relative id %q", entry.ID, FileID("docs/guide.md"))
+	}
+}
+
+func TestAddFileRejectsOutsideRepoScope(t *testing.T) {
+	ctx, cancel := donegroup.WithCancel(context.Background())
+	defer cancel()
+
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.md")
+	if err := os.WriteFile(outside, []byte("# Outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewState(ctx)
+	s.SetRepoScope(RepoScope{Root: root, Name: "repo"})
+	if _, err := s.AddFile(outside, DefaultGroup); err == nil {
+		t.Fatal("expected error for file outside repo scope")
+	}
+}
+
 func newTestState(t *testing.T) *State {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())

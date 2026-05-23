@@ -53,6 +53,26 @@ describe("buildTree", () => {
     expect(root.children.every((c) => c.file != null)).toBe(true);
   });
 
+  it("uses repository-relative paths when available", () => {
+    const files = [
+      {
+        id: "1",
+        name: "a.md",
+        path: "/Users/me/repo/docs/a.md",
+        relativePath: "docs/a.md",
+      },
+      {
+        id: "2",
+        name: "b.md",
+        path: "/Users/me/repo/specs/b.md",
+        relativePath: "specs/b.md",
+      },
+    ];
+    const root = buildTree(files);
+
+    expect(root.children.map((c) => c.name)).toEqual(["docs", "specs"]);
+  });
+
   it("collapses single-child directory chains", () => {
     const files = [
       makeFile("1", "/home/user/project/src/components/App.tsx"),

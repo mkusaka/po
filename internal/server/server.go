@@ -30,12 +30,13 @@ import (
 )
 
 type FileEntry struct {
-	Name     string `json:"name"`
-	ID       string `json:"id"`
-	Path     string `json:"path"`
-	Title    string `json:"title,omitempty"`
-	Uploaded bool   `json:"uploaded,omitempty"`
-	content  string // in-memory content for uploaded files
+	Name         string `json:"name"`
+	ID           string `json:"id"`
+	Path         string `json:"path"`
+	RelativePath string `json:"relativePath,omitempty"`
+	Title        string `json:"title,omitempty"`
+	Uploaded     bool   `json:"uploaded,omitempty"`
+	content      string // in-memory content for uploaded files
 }
 
 const headFileSizeLimit = 8192
@@ -167,6 +168,17 @@ type Group struct {
 	Files []*FileEntry `json:"files"`
 }
 
+// RepoScope confines filesystem-backed files and watch patterns to one Git
+// repository and exposes repo-relative paths for URLs.
+type RepoScope struct {
+	Root string `json:"root,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+func (rs *RepoScope) Enabled() bool {
+	return rs.Root != "" && rs.Name != ""
+}
+
 type sseEvent struct {
 	Name string // SSE event name
 	Data string // SSE data payload (JSON)
@@ -217,6 +229,7 @@ type State struct {
 
 	fileChangeDebounce time.Duration
 	fileChangeTimers   map[string]*time.Timer
+	repoScope          RepoScope
 
 	backupCh     chan struct{}     // dirty signal (buffered, size 1)
 	backupSaveFn func(RestoreData) // backup write callback
@@ -252,6 +265,24 @@ func NewState(ctx context.Context) *State {
 	}
 
 	return s
+}
+
+// SetRepoScope confines future filesystem-backed entries to scope.Root.
+func (s *State) SetRepoScope(scope RepoScope) {
+	if !scope.Enabled() {
+		return
+	}
+	scope.Root = filepath.Clean(scope.Root)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.repoScope = scope
+}
+
+// RepoScope returns the configured repository scope.
+func (s *State) RepoScope() RepoScope {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.repoScope
 }
 
 // ErrBinaryFile is returned when a file is detected as binary.
@@ -292,6 +323,11 @@ func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
 	}
 	s.mu.RUnlock()
 
+	relPath, inRepo := s.repoRelativePath(absPath)
+	if !inRepo {
+		return nil, fmt.Errorf("file %s is outside repository %s", absPath, s.repoScope.Root)
+	}
+
 	// Read file head once for both binary check and title extraction.
 	head, err := readFileHead(absPath)
 	if err != nil {
@@ -324,11 +360,16 @@ func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
 		}
 	}
 
+	idSource := absPath
+	if relPath != "" {
+		idSource = relPath
+	}
 	entry := &FileEntry{
-		Name:  filepath.Base(absPath),
-		ID:    FileID(absPath),
-		Path:  absPath,
-		Title: title,
+		Name:         filepath.Base(absPath),
+		ID:           FileID(idSource),
+		Path:         absPath,
+		RelativePath: relPath,
+		Title:        title,
 	}
 	g.Files = append(g.Files, entry)
 
@@ -669,6 +710,9 @@ func (s *State) AddPattern(absPattern, groupName string) ([]*FileEntry, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("base path %q is not a directory", base)
 	}
+	if !s.repoRelativeDir(base) {
+		return nil, fmt.Errorf("watch pattern %s is outside repository %s", absPattern, s.repoScope.Root)
+	}
 
 	gp, added := func() (*GlobPattern, bool) {
 		s.mu.Lock()
@@ -785,6 +829,7 @@ type RestoreData struct {
 	Groups        map[string][]string `json:"groups"`
 	Patterns      map[string][]string `json:"patterns,omitempty"`
 	UploadedFiles []UploadedFileData  `json:"uploadedFiles,omitempty"`
+	RepoScope     *RepoScope          `json:"repoScope,omitempty"`
 }
 
 // WriteRestoreFile writes RestoreData to a temporary file and returns the path.
@@ -823,11 +868,38 @@ func (s *State) EnableBackup(ctx context.Context, saveFn func(RestoreData)) {
 	})
 }
 
+func (s *State) repoRelativePath(path string) (string, bool) {
+	return s.repoRelativePathFor(path, false)
+}
+
+func (s *State) repoRelativeDir(path string) bool {
+	_, ok := s.repoRelativePathFor(path, true)
+	return ok
+}
+
+func (s *State) repoRelativePathFor(path string, allowRoot bool) (string, bool) {
+	if !s.repoScope.Enabled() {
+		return "", true
+	}
+	rel, err := filepath.Rel(s.repoScope.Root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	if rel == "." && !allowRoot {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
+
 // snapshotRestoreData creates a RestoreData snapshot of the current state.
 // Caller must hold s.mu (at least RLock).
 func (s *State) snapshotRestoreData() RestoreData {
 	data := RestoreData{
 		Groups: make(map[string][]string, len(s.groups)),
+	}
+	if s.repoScope.Enabled() {
+		scope := s.repoScope
+		data.RepoScope = &scope
 	}
 	for name, g := range s.groups {
 		paths := make([]string, 0, len(g.Files))
@@ -1387,12 +1459,13 @@ type searchMatch struct {
 }
 
 type searchResult struct {
-	FileID   string        `json:"fileId"`
-	FileName string        `json:"fileName"`
-	Title    string        `json:"title,omitempty"`
-	Path     string        `json:"path"`
-	Uploaded bool          `json:"uploaded"`
-	Matches  []searchMatch `json:"matches"`
+	FileID       string        `json:"fileId"`
+	FileName     string        `json:"fileName"`
+	Title        string        `json:"title,omitempty"`
+	Path         string        `json:"path"`
+	RelativePath string        `json:"relativePath,omitempty"`
+	Uploaded     bool          `json:"uploaded"`
+	Matches      []searchMatch `json:"matches"`
 }
 
 type searchResponse struct {
@@ -1746,12 +1819,13 @@ func handleSearch(state *State) http.HandlerFunc {
 				continue
 			}
 			resp.Results = append(resp.Results, searchResult{
-				FileID:   entry.ID,
-				FileName: entry.Name,
-				Title:    entry.Title,
-				Path:     entry.Path,
-				Uploaded: entry.Uploaded,
-				Matches:  matches,
+				FileID:       entry.ID,
+				FileName:     entry.Name,
+				Title:        entry.Title,
+				Path:         entry.Path,
+				RelativePath: entry.RelativePath,
+				Uploaded:     entry.Uploaded,
+				Matches:      matches,
 			})
 			resp.Total += len(matches)
 			remaining -= len(matches)
@@ -2058,15 +2132,19 @@ func handleStatus(state *State) http.HandlerFunc {
 		}
 
 		resp := struct {
-			Version  string        `json:"version"`
-			Revision string        `json:"revision"`
-			PID      int           `json:"pid"`
-			Groups   []statusGroup `json:"groups"`
+			Version   string        `json:"version"`
+			Revision  string        `json:"revision"`
+			PID       int           `json:"pid"`
+			RepoScope *RepoScope    `json:"repoScope,omitempty"`
+			Groups    []statusGroup `json:"groups"`
 		}{
 			Version:  version.Version,
 			Revision: version.Revision,
 			PID:      os.Getpid(),
 			Groups:   statusGroups,
+		}
+		if scope := state.RepoScope(); scope.Enabled() {
+			resp.RepoScope = &scope
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {

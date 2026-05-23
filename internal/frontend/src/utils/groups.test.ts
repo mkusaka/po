@@ -5,6 +5,8 @@ import {
   groupToPath,
   buildFileUrl,
   parseFileIdFromSearch,
+  buildFileEntryUrl,
+  resolveFileParam,
 } from "./groups";
 import type { Group } from "../hooks/useApi";
 
@@ -95,6 +97,10 @@ describe("buildFileUrl", () => {
   it("builds URL for named group", () => {
     expect(buildFileUrl("design", "def67890")).toBe("/design?file=def67890");
   });
+
+  it("keeps slash separators readable in relative file paths", () => {
+    expect(buildFileUrl("po", "docs/guide.md")).toBe("/po?file=docs/guide.md");
+  });
 });
 
 describe("parseFileIdFromSearch", () => {
@@ -116,5 +122,36 @@ describe("parseFileIdFromSearch", () => {
 
   it("returns null for empty value", () => {
     expect(parseFileIdFromSearch("?file=")).toBeNull();
+  });
+});
+
+describe("buildFileEntryUrl", () => {
+  it("uses relativePath when available", () => {
+    expect(
+      buildFileEntryUrl("po", {
+        id: "abc12345",
+        relativePath: "docs/guide.md",
+      }),
+    ).toBe("/po?file=docs/guide.md");
+  });
+});
+
+describe("resolveFileParam", () => {
+  const files = [
+    { id: "abc12345", name: "README.md", path: "/repo/README.md", relativePath: "README.md" },
+    {
+      id: "def67890",
+      name: "guide.md",
+      path: "/repo/docs/guide.md",
+      relativePath: "docs/guide.md",
+    },
+  ];
+
+  it("matches legacy file IDs", () => {
+    expect(resolveFileParam(files, "abc12345")?.id).toBe("abc12345");
+  });
+
+  it("matches repository-relative paths", () => {
+    expect(resolveFileParam(files, "docs/guide.md")?.id).toBe("def67890");
   });
 });
