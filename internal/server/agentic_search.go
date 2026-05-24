@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -145,10 +147,14 @@ func newAppServerClient(ctx context.Context, cwd string) (*appServerClient, erro
 
 	go func() {
 		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, stderr)
+		if _, err := io.Copy(&buf, stderr); err != nil {
+			slog.Warn("failed to read codex app-server stderr", "error", err)
+		}
 		client.stderrMu.Lock()
 		defer client.stderrMu.Unlock()
-		client.stderr.Write(buf.Bytes())
+		if _, err := client.stderr.Write(buf.Bytes()); err != nil {
+			slog.Warn("failed to store codex app-server stderr", "error", err)
+		}
 	}()
 
 	return client, nil
@@ -156,11 +162,20 @@ func newAppServerClient(ctx context.Context, cwd string) (*appServerClient, erro
 
 func (c *appServerClient) close() {
 	if c.stdin != nil {
-		_ = c.stdin.Close()
+		if err := c.stdin.Close(); err != nil {
+			slog.Warn("failed to close codex app-server stdin", "error", err)
+		}
 	}
 	if c.cmd != nil && c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
-		_ = c.cmd.Wait()
+		if err := c.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			slog.Warn("failed to kill codex app-server", "error", err)
+		}
+		if err := c.cmd.Wait(); err != nil {
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) {
+				slog.Warn("failed to wait for codex app-server", "error", err)
+			}
+		}
 	}
 }
 
@@ -525,8 +540,8 @@ func extractFinalAgentMessage(turn map[string]any) string {
 	if !ok {
 		return ""
 	}
-	for i := len(items) - 1; i >= 0; i-- {
-		item, ok := items[i].(map[string]any)
+	for _, rawItem := range slices.Backward(items) {
+		item, ok := rawItem.(map[string]any)
 		if !ok || item["type"] != "agentMessage" {
 			continue
 		}
