@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   fetchGroups,
   fetchFileContent,
+  fetchFileDiff,
   openRelativeFile,
   openFileInEditor,
   reorderFiles,
@@ -71,6 +72,42 @@ describe("fetchFileContent", () => {
     await expect(fetchFileContent("default", "nonexist")).rejects.toThrow(
       "Failed to fetch file content",
     );
+  });
+});
+
+describe("fetchFileDiff", () => {
+  it("fetches diff with correct URL", async () => {
+    const data = {
+      fileName: "README.md",
+      relativePath: "README.md",
+      baseRef: "HEAD",
+      baseExists: true,
+      oldContent: "# Old",
+      newContent: "# New",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(data),
+      }),
+    );
+
+    const result = await fetchFileDiff("default", "abc12345");
+    expect(result).toEqual(data);
+    expect(fetch).toHaveBeenCalledWith("/_/api/groups/default/files/abc12345/diff");
+  });
+
+  it("throws with server error message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        text: () => Promise.resolve("git HEAD is not available\n"),
+      }),
+    );
+
+    await expect(fetchFileDiff("default", "abc12345")).rejects.toThrow("git HEAD is not available");
   });
 });
 

@@ -14,7 +14,8 @@ import { fetchFileContent, openRelativeFile } from "../hooks/useApi";
 import type { FileEntry } from "../hooks/useApi";
 import { isPlainLeftClick } from "../utils/linkClick";
 import { escapeRegExp } from "../utils/regex";
-import { RawToggle } from "./RawToggle";
+import { DiffView } from "./DiffView";
+import { MarkdownViewModeToggle, type MarkdownViewMode } from "./MarkdownViewModeToggle";
 import { TocToggle } from "./TocToggle";
 import { CopyButton } from "./CopyButton";
 import { CloseFileButton } from "./CloseFileButton";
@@ -22,6 +23,7 @@ import { resolveLink, resolveImageSrc, extractLanguage } from "../utils/resolve"
 import { parseFrontmatter } from "../utils/frontmatter";
 import { stripMdxSyntax } from "../utils/mdx";
 import { isMarkdownFile, detectLanguage } from "../utils/filetype";
+import { readStoredDiffComments, type DiffComment } from "../utils/diffComments";
 import type { ZoomContent } from "./ZoomModal";
 import type { TocHeading } from "./TocPanel";
 import type { Components } from "react-markdown";
@@ -82,6 +84,9 @@ interface MarkdownViewerProps {
   onScrolledToHeading?: () => void;
   searchQuery?: string | null;
 }
+
+const DIFF_COMMENTS_STORAGE_KEY = "po-diff-comments";
+const EMPTY_DIFF_COMMENTS: DiffComment[] = [];
 
 interface SearchHitMarker {
   top: number;
@@ -575,7 +580,10 @@ export function MarkdownViewer({
 }: MarkdownViewerProps) {
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
-  const [isRawView, setIsRawView] = useState(false);
+  const [viewMode, setViewMode] = useState<MarkdownViewMode>("rendered");
+  const [diffCommentsByFile, setDiffCommentsByFile] = useState<Record<string, DiffComment[]>>(() =>
+    readStoredDiffComments(DIFF_COMMENTS_STORAGE_KEY),
+  );
   const [searchHitMarkers, setSearchHitMarkers] = useState<SearchHitMarker[]>([]);
   const articleRef = useRef<HTMLElement>(null);
   const lastHashScrollKey = useRef("");
@@ -585,6 +593,11 @@ export function MarkdownViewer({
     setPrevFetchKey({ fileId, revision });
     setLoading(true);
   }
+
+  const isMarkdown = isMarkdownFile(fileName);
+  const effectiveViewMode = isMarkdown ? viewMode : "rendered";
+  const isRawView = effectiveViewMode === "raw";
+  const isDiffView = effectiveViewMode === "diff";
 
   useEffect(() => {
     let cancelled = false;
@@ -605,6 +618,14 @@ export function MarkdownViewer({
       cancelled = true;
     };
   }, [activeGroup, fileId, revision]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DIFF_COMMENTS_STORAGE_KEY, JSON.stringify(diffCommentsByFile));
+    } catch {
+      /* ignore */
+    }
+  }, [diffCommentsByFile]);
 
   const handleLinkClick = useCallback(
     async (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
@@ -715,15 +736,57 @@ export function MarkdownViewer({
     [fileId, handleLinkClick, onZoom],
   );
 
-  const isMarkdown = isMarkdownFile(fileName);
   const codeLanguage = isMarkdown ? null : detectLanguage(fileName);
 
   const parsed = useMemo(
-    () => (isMarkdown && !isRawView ? parseFrontmatter(content) : null),
-    [content, isRawView, isMarkdown],
+    () => (isMarkdown && effectiveViewMode === "rendered" ? parseFrontmatter(content) : null),
+    [content, effectiveViewMode, isMarkdown],
+  );
+
+  const fileComments = diffCommentsByFile[fileId] ?? EMPTY_DIFF_COMMENTS;
+
+  const handleAddDiffComment = useCallback(
+    (comment: Omit<DiffComment, "id" | "createdAt">) => {
+      const now = Date.now();
+      const id = `${now}-${Math.random().toString(36).slice(2, 8)}`;
+      setDiffCommentsByFile((prev) => ({
+        ...prev,
+        [fileId]: [...(prev[fileId] ?? []), { ...comment, id, createdAt: now }],
+      }));
+    },
+    [fileId],
+  );
+
+  const handleDeleteDiffComment = useCallback(
+    (commentId: string) => {
+      setDiffCommentsByFile((prev) => {
+        const comments = prev[fileId] ?? [];
+        const nextComments = comments.filter((comment) => comment.id !== commentId);
+        const next = { ...prev };
+        if (nextComments.length === 0) {
+          delete next[fileId];
+        } else {
+          next[fileId] = nextComments;
+        }
+        return next;
+      });
+    },
+    [fileId],
   );
 
   const renderedContent = useMemo(() => {
+    if (isDiffView) {
+      return (
+        <DiffView
+          activeGroup={activeGroup}
+          fileId={fileId}
+          revision={revision}
+          comments={fileComments}
+          onAddComment={handleAddDiffComment}
+          onDeleteComment={handleDeleteDiffComment}
+        />
+      );
+    }
     if (!isMarkdown) {
       return <HighlightedView content={content} language={codeLanguage!} />;
     }
@@ -751,12 +814,27 @@ export function MarkdownViewer({
         </Markdown>
       </>
     );
-  }, [content, isRawView, isMarkdown, codeLanguage, parsed, components, fileName]);
+  }, [
+    activeGroup,
+    codeLanguage,
+    components,
+    content,
+    fileComments,
+    fileId,
+    fileName,
+    handleAddDiffComment,
+    handleDeleteDiffComment,
+    isDiffView,
+    isMarkdown,
+    isRawView,
+    parsed,
+    revision,
+  ]);
 
   const prevHeadingsKey = useRef("");
   useEffect(() => {
     const newHeadings: TocHeading[] = [];
-    if (!isRawView && articleRef.current) {
+    if (effectiveViewMode === "rendered" && articleRef.current) {
       const els = articleRef.current.querySelectorAll("h1, h2, h3, h4, h5, h6");
       for (const el of els) {
         if (el.id) {
@@ -773,7 +851,7 @@ export function MarkdownViewer({
       prevHeadingsKey.current = key;
       onHeadingsChange(newHeadings);
     }
-  }, [isRawView, renderedContent, onHeadingsChange]);
+  }, [effectiveViewMode, renderedContent, onHeadingsChange]);
 
   const onContentRenderedRef = useRef(onContentRendered);
   useLayoutEffect(() => {
@@ -787,7 +865,7 @@ export function MarkdownViewer({
   }, [loading, renderedContent]);
 
   useLayoutEffect(() => {
-    if (loading || !articleRef.current || !isMarkdown || isRawView) {
+    if (loading || !articleRef.current || !isMarkdown || effectiveViewMode !== "rendered") {
       return;
     }
     const id = currentHashTargetId();
@@ -799,7 +877,7 @@ export function MarkdownViewer({
       target.scrollIntoView({ behavior: "auto", block: "start" });
       lastHashScrollKey.current = key;
     }
-  }, [loading, renderedContent, isMarkdown, isRawView, fileId, revision]);
+  }, [loading, renderedContent, isMarkdown, effectiveViewMode, fileId, revision]);
 
   useLayoutEffect(() => {
     if (loading || !scrollToHeading || !articleRef.current) {
@@ -817,7 +895,13 @@ export function MarkdownViewer({
   }, [loading, renderedContent, scrollToHeading, onScrolledToHeading]);
 
   useLayoutEffect(() => {
-    if (loading || !articleRef.current || !isMarkdown || isRawView || !searchQuery?.trim()) {
+    if (
+      loading ||
+      !articleRef.current ||
+      !isMarkdown ||
+      effectiveViewMode !== "rendered" ||
+      !searchQuery?.trim()
+    ) {
       setSearchHitMarkers([]);
       return;
     }
@@ -840,7 +924,7 @@ export function MarkdownViewer({
     return () => {
       resizeObserver.disconnect();
     };
-  }, [loading, renderedContent, isMarkdown, isRawView, searchQuery]);
+  }, [loading, renderedContent, isMarkdown, effectiveViewMode, searchQuery]);
 
   if (loading) {
     return (
@@ -854,7 +938,11 @@ export function MarkdownViewer({
     <div className="flex items-start gap-2">
       <article
         ref={articleRef}
-        className={`markdown-body relative min-w-0 flex-1 overflow-visible${isWide ? " markdown-body--wide" : ""}${fontSize !== "medium" ? ` markdown-body--${fontSize}` : ""}`}
+        className={
+          isDiffView
+            ? "relative min-w-0 flex-1 overflow-visible"
+            : `markdown-body relative min-w-0 flex-1 overflow-visible${isWide ? " markdown-body--wide" : ""}${fontSize !== "medium" ? ` markdown-body--${fontSize}` : ""}`
+        }
       >
         <div className="pointer-events-none absolute inset-0 z-10 overflow-visible">
           {searchHitMarkers.map((marker, index) => (
@@ -872,8 +960,10 @@ export function MarkdownViewer({
         {renderedContent}
       </article>
       <div className="shrink-0 flex flex-col gap-2 -mr-4 -mt-4 sticky -top-4">
-        {isMarkdown && <TocToggle isTocOpen={isTocOpen} onToggle={onTocToggle} />}
-        {isMarkdown && <RawToggle isRaw={isRawView} onToggle={() => setIsRawView((v) => !v)} />}
+        {isMarkdown && viewMode === "rendered" && (
+          <TocToggle isTocOpen={isTocOpen} onToggle={onTocToggle} />
+        )}
+        {isMarkdown && <MarkdownViewModeToggle mode={viewMode} onChange={setViewMode} />}
         <CopyButton content={content} />
         <CloseFileButton onClose={onRemoveFile} uploaded={uploaded} />
       </div>

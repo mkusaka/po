@@ -1551,6 +1551,7 @@ func NewHandler(state *State) http.Handler {
 	mux.HandleFunc("GET /_/api/groups", handleGroups(state))
 	mux.HandleFunc("PUT /_/api/groups/{group}/reorder", handleReorderFiles(state))
 	mux.HandleFunc("GET /_/api/groups/{group}/files/{id}/content", handleFileContent(state))
+	mux.HandleFunc("GET /_/api/groups/{group}/files/{id}/diff", handleFileDiff(state))
 	mux.HandleFunc("GET /_/api/search", handleSearch(state))
 	mux.HandleFunc("POST /_/api/agentic-search", handleAgenticSearch(state))
 	mux.HandleFunc("GET /_/api/groups/{group}/files/{id}/raw/{path...}", handleFileRaw(state))

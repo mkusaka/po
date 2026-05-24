@@ -63,6 +63,38 @@ body,
   line-height: 1.5;
 }
 
+.po-diff-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 16px;
+  width: 100%;
+}
+
+.po-diff-view {
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.po-diff-comments {
+  position: sticky;
+  top: -16px;
+  max-height: calc(100vh - 112px);
+  overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+  .po-diff-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .po-diff-comments {
+    position: static;
+    max-height: none;
+    border-left-width: 0;
+    border-top: 1px solid var(--color-gh-border);
+  }
+}
+
 /* Undo Tailwind preflight's display:block on img inside markdown
    so that inline badge images render on one line like GitHub */
 .markdown-body img {

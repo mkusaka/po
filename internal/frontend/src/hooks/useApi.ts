@@ -18,6 +18,15 @@ export interface FileContent {
   baseDir: string;
 }
 
+export interface FileDiffContent {
+  fileName: string;
+  relativePath: string;
+  baseRef: string;
+  baseExists: boolean;
+  oldContent: string;
+  newContent: string;
+}
+
 export interface VersionInfo {
   version: string;
   revision: string;
@@ -107,6 +116,15 @@ export async function fetchGroups(): Promise<Group[]> {
 export async function fetchFileContent(group: string, id: string): Promise<FileContent> {
   const res = await fetch(`${groupPath(group)}/files/${id}/content`);
   if (!res.ok) throw new Error("Failed to fetch file content");
+  return res.json();
+}
+
+export async function fetchFileDiff(group: string, id: string): Promise<FileDiffContent> {
+  const res = await fetch(`${groupPath(group)}/files/${id}/diff`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text.trim() || "Failed to fetch file diff");
+  }
   return res.json();
 }
 

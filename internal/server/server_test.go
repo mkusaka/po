@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -1516,6 +1517,133 @@ func TestUploadedFileContent(t *testing.T) {
 			t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
 		}
 	})
+}
+
+func TestFileDiff(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+
+	t.Run("returns HEAD and working tree contents", func(t *testing.T) {
+		s := newTestState(t)
+		root := t.TempDir()
+		runGitForServerTest(t, root, "init")
+		runGitForServerTest(t, root, "config", "user.email", "po@example.com")
+		runGitForServerTest(t, root, "config", "user.name", "po")
+		path := filepath.Join(root, "README.md")
+		if err := os.WriteFile(path, []byte("# Old\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runGitForServerTest(t, root, "add", "README.md")
+		runGitForServerTest(t, root, "commit", "-m", "initial")
+		if err := os.WriteFile(path, []byte("# New\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		s.SetRepoScope(RepoScope{Root: root, Name: "repo"})
+		entry, err := s.AddFile(path, DefaultGroup)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		handler := NewHandler(s)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/_/api/groups/default/files/%s/diff", entry.ID), nil)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got status %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var resp fileDiffResponse
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp.RelativePath != "README.md" {
+			t.Fatalf("got relativePath %q, want README.md", resp.RelativePath)
+		}
+		if !resp.BaseExists {
+			t.Fatal("expected baseExists true")
+		}
+		if resp.OldContent != "# Old\n" {
+			t.Fatalf("got oldContent %q", resp.OldContent)
+		}
+		if resp.NewContent != "# New\n" {
+			t.Fatalf("got newContent %q", resp.NewContent)
+		}
+	})
+
+	t.Run("uses empty base for untracked file", func(t *testing.T) {
+		s := newTestState(t)
+		root := t.TempDir()
+		runGitForServerTest(t, root, "init")
+		runGitForServerTest(t, root, "config", "user.email", "po@example.com")
+		runGitForServerTest(t, root, "config", "user.name", "po")
+		base := filepath.Join(root, ".keep")
+		if err := os.WriteFile(base, []byte("tracked\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runGitForServerTest(t, root, "add", ".keep")
+		runGitForServerTest(t, root, "commit", "-m", "initial")
+		path := filepath.Join(root, "draft.md")
+		if err := os.WriteFile(path, []byte("# Draft\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		s.SetRepoScope(RepoScope{Root: root, Name: "repo"})
+		entry, err := s.AddFile(path, DefaultGroup)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		handler := NewHandler(s)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/_/api/groups/default/files/%s/diff", entry.ID), nil)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got status %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var resp fileDiffResponse
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp.BaseExists {
+			t.Fatal("expected baseExists false for untracked file")
+		}
+		if resp.OldContent != "" {
+			t.Fatalf("got oldContent %q, want empty", resp.OldContent)
+		}
+		if resp.NewContent != "# Draft\n" {
+			t.Fatalf("got newContent %q", resp.NewContent)
+		}
+	})
+
+	t.Run("rejects uploaded file", func(t *testing.T) {
+		s := newTestState(t)
+		entry := s.AddUploadedFile("test.md", "# Uploaded", DefaultGroup)
+
+		handler := NewHandler(s)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/_/api/groups/default/files/%s/diff", entry.ID), nil)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+		}
+	})
+}
+
+func runGitForServerTest(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, out)
+	}
 }
 
 func TestOpenFileInEditor(t *testing.T) {
