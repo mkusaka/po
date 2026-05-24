@@ -56,6 +56,28 @@ export interface SearchResponse {
   results: SearchResult[];
 }
 
+export interface StatusResponse {
+  version: string;
+  revision: string;
+  pid: number;
+  repoScope?: {
+    root: string;
+    name: string;
+  };
+  agenticSearch?: {
+    enabled: boolean;
+  };
+}
+
+export interface AgenticSearchResponse {
+  query: string;
+  group?: string;
+  repoRoot: string;
+  repoName: string;
+  answer: string;
+  elapsedMs: number;
+}
+
 function groupPath(group: string): string {
   return `/_/api/groups/${encodeURIComponent(group)}`;
 }
@@ -139,6 +161,12 @@ export async function fetchVersion(): Promise<VersionInfo> {
   return res.json();
 }
 
+export async function fetchStatus(): Promise<StatusResponse> {
+  const res = await fetch("/_/api/status");
+  if (!res.ok) throw new Error("Failed to fetch status");
+  return res.json();
+}
+
 export async function fetchSearchResults(
   query: string,
   group: string,
@@ -153,5 +181,21 @@ export async function fetchSearchResults(
   });
   const res = await fetch(`/_/api/search?${params.toString()}`);
   if (!res.ok) throw new Error("Failed to search file contents");
+  return res.json();
+}
+
+export async function runAgenticSearch(
+  query: string,
+  group: string,
+): Promise<AgenticSearchResponse> {
+  const res = await fetch("/_/api/agentic-search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, group }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text.trim() || "Failed to run agentic search");
+  }
   return res.json();
 }

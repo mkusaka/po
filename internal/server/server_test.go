@@ -1668,6 +1668,93 @@ func TestSearch(t *testing.T) {
 	})
 }
 
+func TestAgenticSearch(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		s := newTestState(t)
+		handler := NewHandler(s)
+
+		body := []byte(`{"query":"where is cache?"}`)
+		req := httptest.NewRequest(http.MethodPost, "/_/api/agentic-search", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("got status %d, want %d", rec.Code, http.StatusForbidden)
+		}
+	})
+
+	t.Run("requires repo scope", func(t *testing.T) {
+		s := newTestState(t)
+		s.EnableAgenticSearch(0)
+		handler := NewHandler(s)
+
+		body := []byte(`{"query":"where is cache?"}`)
+		req := httptest.NewRequest(http.MethodPost, "/_/api/agentic-search", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("runs configured runner with repo context", func(t *testing.T) {
+		s := newTestState(t)
+		root := t.TempDir()
+		s.SetRepoScope(RepoScope{Root: root, Name: "repo"})
+
+		readme := filepath.Join(root, "README.md")
+		docs := filepath.Join(root, "docs", "guide.md")
+		if err := os.MkdirAll(filepath.Dir(docs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(readme, []byte("# README\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(docs, []byte("# Guide\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.AddFile(docs, "repo"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.AddFile(readme, "repo"); err != nil {
+			t.Fatal(err)
+		}
+
+		s.EnableAgenticSearch(0)
+		var got AgenticSearchJob
+		s.SetAgenticSearchRunner(func(_ context.Context, job AgenticSearchJob) (AgenticSearchResult, error) {
+			got = job
+			return AgenticSearchResult{Answer: "docs/guide.md:1 has it"}, nil
+		})
+
+		handler := NewHandler(s)
+		body := []byte(`{"query":"where is guide?","group":"repo"}`)
+		req := httptest.NewRequest(http.MethodPost, "/_/api/agentic-search", bytes.NewReader(body))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got status %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+		}
+
+		var resp agenticSearchResponse
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp.Answer != "docs/guide.md:1 has it" {
+			t.Fatalf("got answer %q", resp.Answer)
+		}
+		if got.RepoRoot != root || got.RepoName != "repo" || got.Group != "repo" {
+			t.Fatalf("unexpected job context: %#v", got)
+		}
+		wantFiles := []string{"README.md", filepath.Join("docs", "guide.md")}
+		if fmt.Sprint(got.FilePaths) != fmt.Sprint(wantFiles) {
+			t.Fatalf("got files %v, want %v", got.FilePaths, wantFiles)
+		}
+	})
+}
+
 func TestMoveUploadedFile(t *testing.T) {
 	t.Run("moves uploaded file between groups", func(t *testing.T) {
 		s := newTestState(t)

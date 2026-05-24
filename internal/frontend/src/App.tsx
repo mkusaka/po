@@ -18,8 +18,15 @@ import { useSSE } from "./hooks/useSSE";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { useActiveHeading } from "./hooks/useActiveHeading";
 import { useScrollRestoration, SCROLL_SESSION_KEY } from "./hooks/useScrollRestoration";
-import type { FileEntry, Group, SearchResult } from "./hooks/useApi";
-import { fetchGroups, fetchSearchResults, removeFile, reorderFiles } from "./hooks/useApi";
+import type { AgenticSearchResponse, FileEntry, Group, SearchResult } from "./hooks/useApi";
+import {
+  fetchGroups,
+  fetchSearchResults,
+  fetchStatus,
+  removeFile,
+  reorderFiles,
+  runAgenticSearch,
+} from "./hooks/useApi";
 import {
   allFileIds,
   parseGroupFromPath,
@@ -94,6 +101,12 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [agenticSearchEnabled, setAgenticSearchEnabled] = useState(false);
+  const [agenticSearchLoading, setAgenticSearchLoading] = useState(false);
+  const [agenticSearchResult, setAgenticSearchResult] = useState<AgenticSearchResponse | null>(
+    null,
+  );
+  const [agenticSearchError, setAgenticSearchError] = useState<string | null>(null);
   const [pendingSearchHeading, setPendingSearchHeading] = useState<string | null>(null);
   const [viewModes, setViewModes] = useState<Record<string, ViewMode>>(() => {
     try {
@@ -224,6 +237,9 @@ export function App() {
         setGroups(data);
       })
       .catch(() => {});
+    fetchStatus()
+      .then((status) => setAgenticSearchEnabled(status.agenticSearch?.enabled === true))
+      .catch(() => {});
   }, []);
 
   // User-initiated navigation (file/group selection) calls pushState directly at
@@ -278,6 +294,11 @@ export function App() {
       cancelled = true;
       clearTimeout(timer);
     };
+  }, [searchQuery, activeGroup]);
+
+  useEffect(() => {
+    setAgenticSearchResult(null);
+    setAgenticSearchError(null);
   }, [searchQuery, activeGroup]);
 
   const activeFile = useMemo(
@@ -370,6 +391,24 @@ export function App() {
       return "";
     });
   }, []);
+
+  const handleAgenticSearch = useCallback(() => {
+    const query = searchQuery?.trim();
+    if (!query || agenticSearchLoading) return;
+    setAgenticSearchLoading(true);
+    setAgenticSearchError(null);
+    runAgenticSearch(query, activeGroup)
+      .then((resp) => {
+        setAgenticSearchResult(resp);
+      })
+      .catch((err) => {
+        setAgenticSearchResult(null);
+        setAgenticSearchError(err instanceof Error ? err.message : "Failed to run agentic search");
+      })
+      .finally(() => {
+        setAgenticSearchLoading(false);
+      });
+  }, [activeGroup, agenticSearchLoading, searchQuery]);
 
   const handleGroupChange = useCallback((name: string) => {
     window.history.pushState(null, "", groupToPath(name));
@@ -526,6 +565,11 @@ export function App() {
             onSearchQueryChange={setSearchQuery}
             searchResults={searchResults}
             searchLoading={searchLoading}
+            agenticSearchEnabled={agenticSearchEnabled}
+            agenticSearchLoading={agenticSearchLoading}
+            agenticSearchResult={agenticSearchResult}
+            agenticSearchError={agenticSearchError}
+            onAgenticSearch={handleAgenticSearch}
             onSearchResultSelect={handleSearchResultSelect}
           />
         )}

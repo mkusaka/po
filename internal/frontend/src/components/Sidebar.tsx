@@ -14,7 +14,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { FileEntry, Group, SearchResult } from "../hooks/useApi";
+import type { AgenticSearchResponse, FileEntry, Group, SearchResult } from "../hooks/useApi";
 import { removeFile, moveFile } from "../hooks/useApi";
 import { buildFileEntryUrl, buildFileUrl } from "../utils/groups";
 import { isPlainLeftClick } from "../utils/linkClick";
@@ -156,6 +156,11 @@ interface SidebarProps {
   onSearchQueryChange: (query: string | null) => void;
   searchResults?: SearchResult[];
   searchLoading?: boolean;
+  agenticSearchEnabled?: boolean;
+  agenticSearchLoading?: boolean;
+  agenticSearchResult?: AgenticSearchResponse | null;
+  agenticSearchError?: string | null;
+  onAgenticSearch?: () => void;
   onSearchResultSelect?: (fileId: string, heading?: string) => void;
 }
 
@@ -171,6 +176,11 @@ export function Sidebar({
   onSearchQueryChange,
   searchResults = [],
   searchLoading = false,
+  agenticSearchEnabled = false,
+  agenticSearchLoading = false,
+  agenticSearchResult = null,
+  agenticSearchError = null,
+  onAgenticSearch,
   onSearchResultSelect,
 }: SidebarProps) {
   const allFiles = useMemo(() => {
@@ -357,6 +367,30 @@ export function Sidebar({
       <nav className="flex flex-col pb-1">
         {isSearching ? (
           <>
+            {agenticSearchEnabled && (
+              <div className="border-b border-gh-border px-3 py-2">
+                <button
+                  type="button"
+                  className="w-full rounded-md border border-gh-border bg-gh-bg px-2 py-1.5 text-sm font-medium text-gh-text transition-colors hover:bg-gh-bg-hover disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={onAgenticSearch}
+                  disabled={agenticSearchLoading || !searchQuery?.trim()}
+                  aria-label="Ask Codex"
+                  title="Ask Codex"
+                >
+                  {agenticSearchLoading ? "Asking Codex..." : "Ask Codex"}
+                </button>
+                {agenticSearchError && (
+                  <div className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-[var(--fgColor-danger)] whitespace-pre-wrap break-words">
+                    {agenticSearchError}
+                  </div>
+                )}
+                {agenticSearchResult && (
+                  <div className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-gh-text-secondary whitespace-pre-wrap break-words">
+                    {agenticSearchResult.answer}
+                  </div>
+                )}
+              </div>
+            )}
             {searchLoading ? (
               <div className="px-3 py-2 text-sm text-gh-text-secondary">Searching contents...</div>
             ) : searchResults.length > 0 ? (

@@ -24,6 +24,7 @@
 - <img src="images/icons/view-flat.svg" width="16" height="16" alt="flat view"> Flat / <img src="images/icons/view-tree.svg" width="16" height="16" alt="tree view"> tree sidebar view with drag-and-drop reorder
 - <img src="images/icons/title-filename.svg" width="16" height="16" alt="file name"> File name / <img src="images/icons/title-heading.svg" width="16" height="16" alt="heading title"> heading title sidebar display toggle (per-group)
 - <img src="images/icons/search.svg" width="16" height="16" alt="search"> Full-text search across file names and content
+- Codex app-server backed agentic repository search with `--repo --agentic-search`
 - YAML frontmatter display (collapsible metadata block)
 - MDX file support (renders as Markdown, strips `import`/`export`, escapes JSX tags)
 - <img src="images/icons/font-size.svg" width="16" height="16" alt="font size"> Content font size toggle (small / medium / large / extra large)
@@ -57,6 +58,7 @@ $ po docs/                              # Open all .md files in a directory
 $ po spec.md --target design            # Open in a named group
 $ po --repo                             # Open all repo Markdown files
 $ po --repo README.md                   # Use /repo-name?file=relative/path URLs
+$ po --repo --agentic-search            # Enable Codex-backed search
 $ cat notes.md | po                     # Read Markdown from stdin
 ```
 
@@ -115,6 +117,8 @@ Pass a path to use a specific repository:
 ``` console
 $ po --repo=/path/to/repo /path/to/repo/docs/guide.md
 ```
+
+Add `--agentic-search` with `--repo` to enable the search panel's Codex button. The server starts `codex app-server` for each request, runs it with a read-only sandbox from the repository root, and returns the answer to the browser. Enable it only for repositories that are appropriate to inspect with Codex.
 
 ### Groups
 
@@ -299,10 +303,13 @@ $ po --status --json
 | `--clear` | | | Clear saved session (restarts server if running) |
 | `--foreground` | | | Run po server in foreground |
 | `--json` | | | Output structured data as JSON to stdout |
+| `--repo` | | | Use Git repository-scoped URLs; optional value is a path inside the repo |
+| `--no-ignore` | | `false` | Include ignored Markdown files when opening all files with `--repo` |
+| `--agentic-search` | | `false` | Enable Codex app-server backed repository search (requires `--repo`) |
 | `--dangerously-allow-remote-access` | | | Allow remote access without authentication (trusted networks only) |
 
 > [!WARNING]
-> Binding to a non-localhost address exposes po to the network **without any authentication**. Remote clients can read any file accessible by the user, browse the filesystem via glob patterns, and shut down the server. A confirmation prompt is shown when `--bind` is set to a non-loopback address.
+> Binding to a non-localhost address exposes po to the network **without any authentication**. Remote clients can read any file accessible by the user, browse the filesystem via glob patterns, and shut down the server. If `--agentic-search` is enabled, remote clients can also start read-only Codex app-server searches against the repository. A confirmation prompt is shown when `--bind` is set to a non-loopback address.
 
 ## Build
 

@@ -67,6 +67,7 @@ var (
 	dangerouslyAllowRemoteAccess bool
 	repo                         string
 	noIgnore                     bool
+	agenticSearch                bool
 	currentRepoScope             server.RepoScope
 )
 
@@ -105,6 +106,8 @@ Repository-scoped URLs:
 
   $ po --repo              # Opens all repo Markdown files under /po
   $ po --repo README.md    # Opens only /po?file=README.md
+  $ po --repo --agentic-search
+                           # Enables Codex app-server backed search
 
 Groups:
   Files can be organized into named groups using the --target (-t) flag.
@@ -179,7 +182,9 @@ WARNING: --bind with a non-loopback address:
   Binding to a non-localhost address (e.g. 0.0.0.0) exposes po to the
   network without any authentication. Remote clients can read any file
   accessible by this user, browse the filesystem via glob patterns, and
-  shut down the server. A confirmation prompt is shown before starting.`,
+  shut down the server. If --agentic-search is enabled, remote clients can
+  also start read-only Codex app-server searches against the repository.
+  A confirmation prompt is shown before starting.`,
 	Args:    cobra.ArbitraryArgs,
 	RunE:    run,
 	Version: version.Version,
@@ -214,6 +219,7 @@ func init() {
 	rootCmd.Flags().StringVar(&repo, "repo", "", "Use Git repository-scoped URLs; optional value is a path inside the repo")
 	rootCmd.Flags().Lookup("repo").NoOptDefVal = "."
 	rootCmd.Flags().BoolVar(&noIgnore, "no-ignore", false, "Include ignored Markdown files when opening all files with --repo")
+	rootCmd.Flags().BoolVar(&agenticSearch, "agentic-search", false, "Enable Codex app-server backed repository search (requires --repo)")
 	rootCmd.Flags().BoolVar(&dangerouslyAllowRemoteAccess, "dangerously-allow-remote-access", false, "Allow remote access without authentication. Recommended only for trusted networks.")
 }
 
@@ -517,6 +523,9 @@ func run(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, c("  - Read any file accessible by this user"))
 		fmt.Fprintln(os.Stderr, c("  - Browse the filesystem via glob patterns"))
 		fmt.Fprintln(os.Stderr, c("  - Shut down or restart the server"))
+		if agenticSearch {
+			fmt.Fprintln(os.Stderr, c("  - Start read-only Codex app-server searches against the repository"))
+		}
 		fmt.Fprintf(os.Stderr, "Continue? [y/N] ")
 		scanner := bufio.NewScanner(os.Stdin)
 		if !scanner.Scan() {
@@ -1454,6 +1463,10 @@ func discoverPorts() []int {
 }
 
 func startServer(ctx context.Context, addr string, filesByGroup map[string][]string, patternsByGroup map[string][]string, uploadedFiles []server.UploadedFileData) error {
+	if agenticSearch && !currentRepoScope.Enabled() {
+		return fmt.Errorf("--agentic-search requires --repo")
+	}
+
 	sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -1473,6 +1486,9 @@ func startServer(ctx context.Context, addr string, filesByGroup map[string][]str
 
 	state := server.NewState(ctx)
 	state.SetRepoScope(currentRepoScope)
+	if agenticSearch {
+		state.EnableAgenticSearch(0)
+	}
 
 	state.EnableBackup(ctx, func(data server.RestoreData) {
 		if err := backup.Save(port, data); err != nil {
@@ -1593,6 +1609,9 @@ func spawnNewProcess(addr string, restoreFile string) (*os.Process, error) {
 	}
 	if dangerouslyAllowRemoteAccess {
 		args = append(args, "--dangerously-allow-remote-access")
+	}
+	if agenticSearch {
+		args = append(args, "--agentic-search")
 	}
 	cmd := exec.Command(binPath, args...) //nolint:gosec
 	setSysProcAttr(cmd)

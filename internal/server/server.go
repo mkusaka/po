@@ -230,6 +230,7 @@ type State struct {
 	fileChangeDebounce time.Duration
 	fileChangeTimers   map[string]*time.Timer
 	repoScope          RepoScope
+	agenticSearch      agenticSearchConfig
 
 	backupCh     chan struct{}     // dirty signal (buffered, size 1)
 	backupSaveFn func(RestoreData) // backup write callback
@@ -255,6 +256,7 @@ func NewState(ctx context.Context) *State {
 		aliasReverse:       make(map[string]string),
 		fileChangeDebounce: defaultFileChangeDebounce,
 		fileChangeTimers:   make(map[string]*time.Timer),
+		agenticSearch:      defaultAgenticSearchConfig(),
 	}
 
 	if w != nil {
@@ -1477,6 +1479,20 @@ type searchResponse struct {
 	Results []searchResult `json:"results"`
 }
 
+type agenticSearchRequest struct {
+	Query string `json:"query"`
+	Group string `json:"group,omitempty"`
+}
+
+type agenticSearchResponse struct {
+	Query     string `json:"query"`
+	Group     string `json:"group,omitempty"`
+	RepoRoot  string `json:"repoRoot"`
+	RepoName  string `json:"repoName"`
+	Answer    string `json:"answer"`
+	ElapsedMs int64  `json:"elapsedMs"`
+}
+
 type openFileRequest struct {
 	FileID string `json:"fileId"`
 	Path   string `json:"path"`
@@ -1498,6 +1514,7 @@ func NewHandler(state *State) http.Handler {
 	mux.HandleFunc("PUT /_/api/groups/{group}/reorder", handleReorderFiles(state))
 	mux.HandleFunc("GET /_/api/groups/{group}/files/{id}/content", handleFileContent(state))
 	mux.HandleFunc("GET /_/api/search", handleSearch(state))
+	mux.HandleFunc("POST /_/api/agentic-search", handleAgenticSearch(state))
 	mux.HandleFunc("GET /_/api/groups/{group}/files/{id}/raw/{path...}", handleFileRaw(state))
 	mux.HandleFunc("POST /_/api/groups/{group}/files/open", handleOpenFile(state))
 	mux.HandleFunc("POST /_/api/patterns", handleAddPattern(state))
@@ -1838,6 +1855,94 @@ func handleSearch(state *State) http.HandlerFunc {
 	}
 }
 
+func handleAgenticSearch(state *State) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cfg := state.agenticSearchSnapshot()
+		if !cfg.enabled {
+			http.Error(w, "agentic search is disabled; start po with --agentic-search", http.StatusForbidden)
+			return
+		}
+
+		scope := state.RepoScope()
+		if !scope.Enabled() {
+			http.Error(w, "agentic search requires --repo", http.StatusBadRequest)
+			return
+		}
+
+		var req agenticSearchRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, 16*1024)).Decode(&req); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		req.Query = strings.TrimSpace(req.Query)
+		if req.Query == "" {
+			http.Error(w, "missing search query", http.StatusBadRequest)
+			return
+		}
+		if len(req.Query) > 4000 {
+			http.Error(w, "search query is too long", http.StatusBadRequest)
+			return
+		}
+
+		groupName := req.Group
+		if groupName != "" {
+			resolved, err := ResolveGroupName(groupName)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			groupName = resolved
+		}
+
+		var files []*FileEntry
+		if groupName != "" {
+			found := false
+			for _, group := range state.Groups() {
+				if group.Name != groupName {
+					continue
+				}
+				files = append(files, group.Files...)
+				found = true
+				break
+			}
+			if !found {
+				http.Error(w, "group not found", http.StatusNotFound)
+				return
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), cfg.timeout)
+		defer cancel()
+
+		start := time.Now()
+		result, err := cfg.runner(ctx, AgenticSearchJob{
+			Query:     req.Query,
+			RepoRoot:  scope.Root,
+			RepoName:  scope.Name,
+			Group:     groupName,
+			FilePaths: sortedRepoRelativeFilePaths(files, scope.Root),
+		})
+		if err != nil {
+			logAgenticSearchError(err)
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		resp := agenticSearchResponse{
+			Query:     req.Query,
+			Group:     groupName,
+			RepoRoot:  scope.Root,
+			RepoName:  scope.Name,
+			Answer:    result.Answer,
+			ElapsedMs: time.Since(start).Milliseconds(),
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			slog.Error("failed to encode response", "error", err)
+		}
+	}
+}
+
 func readSearchableContent(entry *FileEntry) (string, error) {
 	if entry.Uploaded {
 		return entry.content, nil
@@ -2132,17 +2237,21 @@ func handleStatus(state *State) http.HandlerFunc {
 		}
 
 		resp := struct {
-			Version   string        `json:"version"`
-			Revision  string        `json:"revision"`
-			PID       int           `json:"pid"`
-			RepoScope *RepoScope    `json:"repoScope,omitempty"`
-			Groups    []statusGroup `json:"groups"`
+			Version       string     `json:"version"`
+			Revision      string     `json:"revision"`
+			PID           int        `json:"pid"`
+			RepoScope     *RepoScope `json:"repoScope,omitempty"`
+			AgenticSearch struct {
+				Enabled bool `json:"enabled"`
+			} `json:"agenticSearch"`
+			Groups []statusGroup `json:"groups"`
 		}{
 			Version:  version.Version,
 			Revision: version.Revision,
 			PID:      os.Getpid(),
 			Groups:   statusGroups,
 		}
+		resp.AgenticSearch.Enabled = state.AgenticSearchEnabled()
 		if scope := state.RepoScope(); scope.Enabled() {
 			resp.RepoScope = &scope
 		}
