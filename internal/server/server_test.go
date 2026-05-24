@@ -1729,7 +1729,7 @@ func TestAgenticSearch(t *testing.T) {
 		})
 
 		handler := NewHandler(s)
-		body := []byte(`{"query":"where is guide?","group":"repo"}`)
+		body := []byte(`{"query":"where is guide?","group":"repo","history":[{"role":"user","content":"where is cache?"},{"role":"assistant","content":"README.md has it"},{"role":"ignored","content":"drop me"}]}`)
 		req := httptest.NewRequest(http.MethodPost, "/_/api/agentic-search", bytes.NewReader(body))
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
@@ -1747,6 +1747,13 @@ func TestAgenticSearch(t *testing.T) {
 		}
 		if got.RepoRoot != root || got.RepoName != "repo" || got.Group != "repo" {
 			t.Fatalf("unexpected job context: %#v", got)
+		}
+		wantHistory := []AgenticSearchHistoryMessage{
+			{Role: "user", Content: "where is cache?"},
+			{Role: "assistant", Content: "README.md has it"},
+		}
+		if fmt.Sprint(got.History) != fmt.Sprint(wantHistory) {
+			t.Fatalf("got history %v, want %v", got.History, wantHistory)
 		}
 		wantFiles := []string{"README.md", filepath.Join("docs", "guide.md")}
 		if fmt.Sprint(got.FilePaths) != fmt.Sprint(wantFiles) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Sidebar } from "./Sidebar";
 import type { Group, SearchResult } from "../hooks/useApi";
@@ -369,14 +369,18 @@ describe("Sidebar", () => {
         searchQuery="cache"
         onSearchQueryChange={() => {}}
         agenticSearchEnabled={true}
-        agenticSearchResult={{
-          query: "cache",
-          group: "default",
-          repoRoot: "/repo",
-          repoName: "repo",
-          answer: "**Summary**\n\n- `README.md` has cache notes",
-          elapsedMs: 100,
-        }}
+        agenticSearchTurns={[
+          {
+            id: 1,
+            query: "cache",
+            answer: "**Summary**\n\n- `README.md` has cache notes",
+            thinking: "",
+            progress: null,
+            error: null,
+            loading: false,
+            elapsedMs: 100,
+          },
+        ]}
       />,
     );
 
@@ -404,23 +408,71 @@ describe("Sidebar", () => {
         onSearchQueryChange={() => {}}
         agenticSearchEnabled={true}
         agenticSearchLoading={true}
-        agenticSearchProgress="$ rg cache"
-        agenticSearchThinking="Checking repo files"
-        agenticSearchResult={{
-          query: "cache",
-          group: "default",
-          repoRoot: "/repo",
-          repoName: "repo",
-          answer: "Partial answer",
-          elapsedMs: 0,
-        }}
+        agenticSearchTurns={[
+          {
+            id: 1,
+            query: "cache",
+            answer: "Partial answer",
+            thinking: "Checking repo files",
+            progress: "$ rg cache",
+            error: null,
+            loading: true,
+            elapsedMs: 0,
+          },
+        ]}
       />,
     );
 
+    expect(screen.getByRole("status")).toHaveTextContent("Codex is working...");
     expect(screen.getByText("$ rg cache")).toBeInTheDocument();
     expect(screen.getByText("Thinking")).toBeInTheDocument();
     expect(screen.getByText("Checking repo files")).toBeInTheDocument();
     expect(screen.getByText("Partial answer")).toBeInTheDocument();
+  });
+
+  it("renders agentic search as a bottom-input chat history", () => {
+    render(
+      <Sidebar
+        groups={groups}
+        activeGroup="default"
+        activeFileId={null}
+        onFileSelect={() => {}}
+        onFilesReorder={() => {}}
+        viewMode="flat"
+        showTitle={false}
+        searchQuery=""
+        onSearchQueryChange={() => {}}
+        agenticSearchEnabled={true}
+        agenticSearchTurns={[
+          {
+            id: 1,
+            query: "where is cache?",
+            answer: "README.md mentions it.",
+            thinking: "",
+            progress: null,
+            error: null,
+            loading: false,
+            elapsedMs: 1200,
+          },
+          {
+            id: 2,
+            query: "show more detail",
+            answer: "The cache docs are in `README.md`.",
+            thinking: "",
+            progress: "$ rg cache",
+            error: null,
+            loading: true,
+            elapsedMs: 0,
+          },
+        ]}
+      />,
+    );
+
+    const log = screen.getByRole("log", { name: "Codex chat" });
+    const input = screen.getByPlaceholderText("Search or ask Codex...");
+    expect(log).toHaveTextContent("where is cache?");
+    expect(log).toHaveTextContent("show more detail");
+    expect(log.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("submits agentic search from chat controls", async () => {
@@ -448,6 +500,34 @@ describe("Sidebar", () => {
     await user.click(screen.getByPlaceholderText("Search or ask Codex..."));
     await user.keyboard("{Enter}");
     expect(onAgenticSearch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not submit agentic search while IME composition is active", () => {
+    const onAgenticSearch = vi.fn();
+    render(
+      <Sidebar
+        groups={groups}
+        activeGroup="default"
+        activeFileId={null}
+        onFileSelect={() => {}}
+        onFilesReorder={() => {}}
+        viewMode="flat"
+        showTitle={false}
+        searchQuery="検索"
+        onSearchQueryChange={() => {}}
+        agenticSearchEnabled={true}
+        onAgenticSearch={onAgenticSearch}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText("Search or ask Codex...");
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onAgenticSearch).not.toHaveBeenCalled();
+
+    fireEvent.compositionEnd(input);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onAgenticSearch).toHaveBeenCalledTimes(1);
   });
 
   it("toggles content matches section", async () => {

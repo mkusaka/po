@@ -255,9 +255,15 @@ describe("runAgenticSearch", () => {
     );
     const events: string[] = [];
 
-    const result = await runAgenticSearch("cache", "default", (event) => {
-      events.push(event.type);
-    });
+    const history = [{ role: "user" as const, content: "previous question" }];
+    const result = await runAgenticSearch(
+      "cache",
+      "default",
+      (event) => {
+        events.push(event.type);
+      },
+      history,
+    );
 
     expect(result).toEqual({
       query: "cache",
@@ -271,7 +277,7 @@ describe("runAgenticSearch", () => {
     expect(fetch).toHaveBeenCalledWith("/_/api/agentic-search", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ query: "cache", group: "default" }),
+      body: JSON.stringify({ query: "cache", group: "default", history }),
     });
   });
 });

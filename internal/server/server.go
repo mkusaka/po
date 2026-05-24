@@ -1500,8 +1500,14 @@ type searchResponse struct {
 }
 
 type agenticSearchRequest struct {
-	Query string `json:"query"`
-	Group string `json:"group,omitempty"`
+	Query   string                        `json:"query"`
+	Group   string                        `json:"group,omitempty"`
+	History []agenticSearchHistoryMessage `json:"history,omitempty"`
+}
+
+type agenticSearchHistoryMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type agenticSearchResponse struct {
@@ -1902,7 +1908,7 @@ func handleAgenticSearch(state *State) http.HandlerFunc {
 		}
 
 		var req agenticSearchRequest
-		if err := json.NewDecoder(io.LimitReader(r.Body, 16*1024)).Decode(&req); err != nil {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 128*1024)).Decode(&req); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
@@ -1915,6 +1921,7 @@ func handleAgenticSearch(state *State) http.HandlerFunc {
 			http.Error(w, "search query is too long", http.StatusBadRequest)
 			return
 		}
+		history := sanitizeAgenticSearchHistory(req.History)
 
 		groupName := req.Group
 		if groupName != "" {
@@ -1953,6 +1960,7 @@ func handleAgenticSearch(state *State) http.HandlerFunc {
 			RepoName:  scope.Name,
 			Group:     groupName,
 			FilePaths: sortedRepoRelativeFilePaths(files, scope.Root),
+			History:   history,
 		}
 		if acceptsEventStream(r) {
 			handleAgenticSearchStream(ctx, w, cfg, job, start)
@@ -1983,6 +1991,41 @@ func handleAgenticSearch(state *State) http.HandlerFunc {
 
 func acceptsEventStream(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/event-stream")
+}
+
+func sanitizeAgenticSearchHistory(history []agenticSearchHistoryMessage) []AgenticSearchHistoryMessage {
+	if len(history) == 0 {
+		return nil
+	}
+	start := 0
+	if len(history) > 12 {
+		start = len(history) - 12
+	}
+	sanitized := make([]AgenticSearchHistoryMessage, 0, len(history)-start)
+	for _, msg := range history[start:] {
+		role := strings.TrimSpace(msg.Role)
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		content = truncateAgenticSearchHistoryContent(content, 4000)
+		sanitized = append(sanitized, AgenticSearchHistoryMessage{Role: role, Content: content})
+	}
+	return sanitized
+}
+
+func truncateAgenticSearchHistoryContent(content string, limit int) string {
+	if len(content) <= limit {
+		return content
+	}
+	runes := []rune(content)
+	if len(runes) <= limit {
+		return content
+	}
+	return string(runes[:limit]) + "\n..."
 }
 
 func handleAgenticSearchStream(ctx context.Context, w http.ResponseWriter, cfg agenticSearchConfig, job AgenticSearchJob, start time.Time) {

@@ -79,6 +79,11 @@ export interface AgenticSearchResponse {
   elapsedMs: number;
 }
 
+export interface AgenticSearchHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export type AgenticSearchStreamEvent =
   | { type: "started" }
   | { type: "output_delta"; delta: string }
@@ -199,6 +204,7 @@ export async function runAgenticSearch(
   query: string,
   group: string,
   onEvent?: AgenticSearchStreamHandler,
+  history: AgenticSearchHistoryMessage[] = [],
 ): Promise<AgenticSearchResponse> {
   const res = await fetch("/_/api/agentic-search", {
     method: "POST",
@@ -206,7 +212,7 @@ export async function runAgenticSearch(
       "Content-Type": "application/json",
       ...(onEvent ? { Accept: "text/event-stream" } : {}),
     },
-    body: JSON.stringify({ query, group }),
+    body: JSON.stringify({ query, group, ...(history.length > 0 ? { history } : {}) }),
   });
   if (!res.ok) {
     const text = await res.text();

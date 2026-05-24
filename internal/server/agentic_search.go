@@ -31,6 +31,13 @@ type AgenticSearchJob struct {
 	RepoName  string
 	Group     string
 	FilePaths []string
+	History   []AgenticSearchHistoryMessage
+}
+
+// AgenticSearchHistoryMessage carries prior chat context for follow-up searches.
+type AgenticSearchHistoryMessage struct {
+	Role    string
+	Content string
 }
 
 // AgenticSearchResult is returned by an agentic search runner.
@@ -495,6 +502,13 @@ func buildAgenticSearchPrompt(job AgenticSearchJob) string {
 			}
 			fmt.Fprintf(&b, "- %s\n", filepath.ToSlash(path))
 		}
+	}
+	if len(job.History) > 0 {
+		b.WriteString("\nPrevious chat messages in this po search session (oldest to newest):\n")
+		for _, msg := range job.History {
+			fmt.Fprintf(&b, "%s: %s\n", msg.Role, msg.Content)
+		}
+		b.WriteString("Use this history to resolve follow-up references, but verify repository facts again.\n")
 	}
 	b.WriteString("\nSearch request:\n")
 	b.WriteString(job.Query)

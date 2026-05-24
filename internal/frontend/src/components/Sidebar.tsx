@@ -16,7 +16,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { AgenticSearchResponse, FileEntry, Group, SearchResult } from "../hooks/useApi";
+import type { FileEntry, Group, SearchResult } from "../hooks/useApi";
 import { removeFile, moveFile } from "../hooks/useApi";
 import { buildFileEntryUrl, buildFileUrl } from "../utils/groups";
 import { isPlainLeftClick } from "../utils/linkClick";
@@ -112,71 +112,163 @@ function AgenticSearchThinking({ thinking }: { thinking: string }) {
 }
 
 interface AgenticSearchChatProps {
+  turns: AgenticSearchChatTurn[];
+}
+
+export interface AgenticSearchChatTurn {
+  id: number;
   query: string;
-  loading: boolean;
-  result: AgenticSearchResponse | null;
+  answer: string;
   thinking: string;
   progress: string | null;
   error: string | null;
+  loading: boolean;
+  elapsedMs: number;
 }
 
-function AgenticSearchChat({
-  query,
-  loading,
-  result,
-  thinking,
-  progress,
-  error,
-}: AgenticSearchChatProps) {
-  const hasTranscript =
-    loading || result != null || thinking.trim() !== "" || progress != null || error != null;
-  if (!hasTranscript) return null;
+function AgenticSearchChat({ turns }: AgenticSearchChatProps) {
+  const endRef = useRef<HTMLDivElement>(null);
+  const latestTurn = turns.at(-1);
+  const scrollKey = [
+    turns.length,
+    latestTurn?.loading,
+    latestTurn?.progress,
+    latestTurn?.answer.length,
+    latestTurn?.thinking.length,
+    latestTurn?.error,
+  ].join(":");
 
-  const displayQuery = result?.query || query.trim();
-  const answer = result?.answer ?? "";
-  const hasAssistantContent =
-    loading || progress != null || thinking.trim() !== "" || answer.trim() !== "" || error != null;
+  useEffect(() => {
+    endRef.current?.scrollIntoView?.({ block: "end" });
+  }, [scrollKey]);
+
+  if (turns.length === 0) return null;
 
   return (
-    <div className="border-b border-gh-border px-3 py-3">
-      <div role="log" aria-label="Codex chat" aria-live="polite" className="space-y-3">
-        {displayQuery && (
-          <div className="flex justify-end">
-            <div className="max-w-[88%] rounded-md border border-gh-border bg-gh-bg px-3 py-2 text-sm leading-5 text-gh-text whitespace-pre-wrap break-words shadow-sm">
-              {displayQuery}
+    <div className="px-3 py-3">
+      <div role="log" aria-label="Codex chat" aria-live="polite" className="space-y-4">
+        {turns.map((turn) => (
+          <div key={turn.id} className="space-y-3">
+            <div className="flex justify-end">
+              <div className="max-w-[88%] rounded-md border border-gh-border bg-gh-bg px-3 py-2 text-sm leading-5 text-gh-text whitespace-pre-wrap break-words shadow-sm">
+                {turn.query}
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <div
+                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gh-border bg-gh-bg text-[11px] font-semibold text-gh-text-secondary"
+                aria-hidden="true"
+              >
+                C
+              </div>
+              <div className="min-w-0 flex-1 rounded-md border border-gh-border bg-gh-bg-secondary px-3 py-2 text-sm leading-5 text-gh-text shadow-sm">
+                {turn.loading && (
+                  <div
+                    role="status"
+                    className="mb-2 flex items-center gap-2 text-xs font-medium text-gh-text"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-gh-accent animate-pulse" />
+                    <span>Codex is working...</span>
+                  </div>
+                )}
+                {turn.progress && (
+                  <div className="mb-2 rounded-sm bg-gh-bg px-2 py-1.5 text-xs leading-5 text-gh-text-secondary whitespace-pre-wrap break-words">
+                    {turn.progress}
+                  </div>
+                )}
+                <AgenticSearchThinking thinking={turn.thinking} />
+                {turn.error && (
+                  <div className="mb-2 rounded-sm bg-gh-bg px-2 py-1.5 text-xs leading-5 text-[var(--fgColor-danger)] whitespace-pre-wrap break-words last:mb-0">
+                    {turn.error}
+                  </div>
+                )}
+                {turn.answer.trim() !== "" ? (
+                  <div className="text-gh-text-secondary break-words">
+                    <AgenticSearchAnswer answer={turn.answer} />
+                  </div>
+                ) : turn.loading && !turn.error ? (
+                  <div className="text-sm text-gh-text-secondary">Waiting for Codex output...</div>
+                ) : null}
+                {!turn.loading && !turn.error && turn.elapsedMs > 0 && (
+                  <div className="mt-2 text-[11px] leading-4 text-gh-text-secondary">
+                    Done in {(turn.elapsedMs / 1000).toFixed(1)}s
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        )}
-        {hasAssistantContent && (
-          <div className="flex items-start gap-2">
-            <div
-              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gh-border bg-gh-bg text-[11px] font-semibold text-gh-text-secondary"
-              aria-hidden="true"
-            >
-              C
-            </div>
-            <div className="min-w-0 flex-1 rounded-md border border-gh-border bg-gh-bg-secondary px-3 py-2 text-sm leading-5 text-gh-text shadow-sm">
-              {progress && (
-                <div className="mb-2 rounded-sm bg-gh-bg px-2 py-1.5 text-xs leading-5 text-gh-text-secondary whitespace-pre-wrap break-words">
-                  {progress}
-                </div>
-              )}
-              <AgenticSearchThinking thinking={thinking} />
-              {error && (
-                <div className="mb-2 rounded-sm bg-gh-bg px-2 py-1.5 text-xs leading-5 text-[var(--fgColor-danger)] whitespace-pre-wrap break-words last:mb-0">
-                  {error}
-                </div>
-              )}
-              {answer.trim() !== "" ? (
-                <div className="text-gh-text-secondary break-words">
-                  <AgenticSearchAnswer answer={answer} />
-                </div>
-              ) : loading && !error ? (
-                <div className="text-sm text-gh-text-secondary">Thinking...</div>
-              ) : null}
-            </div>
-          </div>
-        )}
+        ))}
+        <div ref={endRef} />
+      </div>
+    </div>
+  );
+}
+
+function isComposingInputEvent(event: React.KeyboardEvent<HTMLInputElement>, composing: boolean) {
+  return (
+    composing || event.nativeEvent.isComposing || event.key === "Process" || event.keyCode === 229
+  );
+}
+
+interface AgenticSearchInputProps {
+  value: string;
+  loading: boolean;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit?: () => void;
+}
+
+function AgenticSearchInput({
+  value,
+  loading,
+  inputRef,
+  onChange,
+  onClose,
+  onSubmit,
+}: AgenticSearchInputProps) {
+  const composingRef = useRef(false);
+  const canSubmit = !loading && value.trim() !== "";
+
+  return (
+    <div className="border-t border-gh-border bg-gh-bg-sidebar px-2 py-2">
+      <div className="flex gap-1.5">
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onCompositionStart={() => {
+            composingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false;
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              onClose();
+              return;
+            }
+            if (e.key === "Enter") {
+              if (isComposingInputEvent(e, composingRef.current)) return;
+              if (!canSubmit) return;
+              e.preventDefault();
+              onSubmit?.();
+            }
+          }}
+          placeholder="Search or ask Codex..."
+          className="min-w-0 flex-1 px-2 py-1.5 text-sm bg-gh-bg border border-gh-border rounded-md text-gh-text placeholder:text-gh-text-secondary outline-none focus:border-gh-accent"
+        />
+        <button
+          type="button"
+          className="shrink-0 rounded-md border border-gh-border bg-gh-bg px-2.5 py-1.5 text-sm font-medium text-gh-text transition-colors hover:bg-gh-bg-hover disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={onSubmit}
+          disabled={!canSubmit}
+          aria-label="Send to Codex"
+          title="Send to Codex"
+        >
+          Send
+        </button>
       </div>
     </div>
   );
@@ -286,10 +378,7 @@ interface SidebarProps {
   searchLoading?: boolean;
   agenticSearchEnabled?: boolean;
   agenticSearchLoading?: boolean;
-  agenticSearchResult?: AgenticSearchResponse | null;
-  agenticSearchThinking?: string;
-  agenticSearchProgress?: string | null;
-  agenticSearchError?: string | null;
+  agenticSearchTurns?: AgenticSearchChatTurn[];
   onAgenticSearch?: () => void;
   onSearchResultSelect?: (fileId: string, heading?: string) => void;
 }
@@ -309,10 +398,7 @@ export function Sidebar({
   searchLoading = false,
   agenticSearchEnabled = false,
   agenticSearchLoading = false,
-  agenticSearchResult = null,
-  agenticSearchThinking = "",
-  agenticSearchProgress = null,
-  agenticSearchError = null,
+  agenticSearchTurns = [],
   onAgenticSearch,
   onSearchResultSelect,
 }: SidebarProps) {
@@ -323,13 +409,9 @@ export function Sidebar({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const searchOpen = searchQuery != null;
-  const isSearching = searchQuery != null && searchQuery.length > 0;
-  const agenticSearchHasTranscript =
-    agenticSearchLoading ||
-    agenticSearchResult != null ||
-    agenticSearchThinking.trim() !== "" ||
-    agenticSearchProgress != null ||
-    agenticSearchError != null;
+  const hasSearchText = searchQuery != null && searchQuery.length > 0;
+  const showSearchPanel = searchOpen && (hasSearchText || agenticSearchEnabled);
+  const agenticSearchHasTranscript = agenticSearchTurns.length > 0;
 
   const filteredFiles = useMemo(() => {
     if (!searchQuery) return allFiles;
@@ -489,10 +571,10 @@ export function Sidebar({
 
   return (
     <aside
-      className="relative bg-gh-bg-sidebar border-r border-gh-border flex flex-col overflow-y-auto overscroll-contain shrink-0"
+      className="relative bg-gh-bg-sidebar border-r border-gh-border flex flex-col overflow-hidden shrink-0"
       style={{ width }}
     >
-      {searchOpen && (
+      {searchOpen && !agenticSearchEnabled && (
         <div className="px-2 pt-2 pb-1">
           <div className="flex gap-1.5">
             <input
@@ -503,52 +585,21 @@ export function Sidebar({
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
                   onSearchQueryChange(null);
-                  return;
-                }
-                if (
-                  e.key === "Enter" &&
-                  agenticSearchEnabled &&
-                  !agenticSearchLoading &&
-                  searchQuery?.trim()
-                ) {
-                  e.preventDefault();
-                  onAgenticSearch?.();
                 }
               }}
-              placeholder={agenticSearchEnabled ? "Search or ask Codex..." : "Search files..."}
+              placeholder="Search files..."
               className="min-w-0 flex-1 px-2 py-1.5 text-sm bg-gh-bg border border-gh-border rounded-md text-gh-text placeholder:text-gh-text-secondary outline-none focus:border-gh-accent"
             />
-            {agenticSearchEnabled && (
-              <button
-                type="button"
-                className="shrink-0 rounded-md border border-gh-border bg-gh-bg px-2.5 py-1.5 text-sm font-medium text-gh-text transition-colors hover:bg-gh-bg-hover disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={onAgenticSearch}
-                disabled={agenticSearchLoading || !searchQuery?.trim()}
-                aria-label="Send to Codex"
-                title="Send to Codex"
-              >
-                Send
-              </button>
-            )}
           </div>
         </div>
       )}
-      <nav className="flex flex-col pb-1">
-        {isSearching ? (
+      <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-1">
+        {showSearchPanel ? (
           <>
-            {agenticSearchEnabled && (
-              <AgenticSearchChat
-                query={searchQuery ?? ""}
-                loading={agenticSearchLoading}
-                result={agenticSearchResult}
-                thinking={agenticSearchThinking}
-                progress={agenticSearchProgress}
-                error={agenticSearchError}
-              />
-            )}
-            {searchLoading ? (
+            {agenticSearchEnabled && <AgenticSearchChat turns={agenticSearchTurns} />}
+            {hasSearchText && searchLoading ? (
               <div className="px-3 py-2 text-sm text-gh-text-secondary">Searching contents...</div>
-            ) : searchResults.length > 0 ? (
+            ) : hasSearchText && searchResults.length > 0 ? (
               <>
                 <button
                   type="button"
@@ -608,7 +659,7 @@ export function Sidebar({
                   )}
               </>
             ) : null}
-            {files.length > 0 && (
+            {hasSearchText && files.length > 0 && (
               <>
                 <button
                   type="button"
@@ -642,6 +693,7 @@ export function Sidebar({
               </>
             )}
             {!searchLoading &&
+              hasSearchText &&
               searchResults.length === 0 &&
               files.length === 0 &&
               !agenticSearchHasTranscript && (
@@ -716,6 +768,16 @@ export function Sidebar({
           </DndContext>
         )}
       </nav>
+      {searchOpen && agenticSearchEnabled && (
+        <AgenticSearchInput
+          value={searchQuery ?? ""}
+          loading={agenticSearchLoading}
+          inputRef={searchInputRef}
+          onChange={onSearchQueryChange}
+          onClose={() => onSearchQueryChange(null)}
+          onSubmit={onAgenticSearch}
+        />
+      )}
       {/* Resize handle */}
       <div
         className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-gh-border active:bg-gh-border transition-colors"
