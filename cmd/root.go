@@ -66,6 +66,7 @@ var (
 	jsonOutput                   bool
 	dangerouslyAllowRemoteAccess bool
 	repo                         string
+	noIgnore                     bool
 	currentRepoScope             server.RepoScope
 )
 
@@ -99,9 +100,11 @@ Single Server, Multiple Files:
 
 Repository-scoped URLs:
   Use --repo to make URLs address files by their path relative to the current
-  Git repository. The URL path becomes the repository name.
+  Git repository. With no file arguments, po opens all Markdown files in the
+  repository while respecting .gitignore.
 
-  $ po --repo README.md    # Opens /po?file=README.md
+  $ po --repo              # Opens all repo Markdown files under /po
+  $ po --repo README.md    # Opens only /po?file=README.md
 
 Groups:
   Files can be organized into named groups using the --target (-t) flag.
@@ -210,6 +213,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output structured data as JSON to stdout")
 	rootCmd.Flags().StringVar(&repo, "repo", "", "Use Git repository-scoped URLs; optional value is a path inside the repo")
 	rootCmd.Flags().Lookup("repo").NoOptDefVal = "."
+	rootCmd.Flags().BoolVar(&noIgnore, "no-ignore", false, "Include ignored Markdown files when opening all files with --repo")
 	rootCmd.Flags().BoolVar(&dangerouslyAllowRemoteAccess, "dangerously-allow-remote-access", false, "Allow remote access without authentication. Recommended only for trusted networks.")
 }
 
@@ -370,13 +374,24 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 	target = resolved
 
-	if recursive && len(args) == 0 {
-		return fmt.Errorf("--recursive (-R) requires a directory argument")
-	}
+	stdinRedirected := isStdinRedirected()
+	var files, patterns []string
+	if repoFlagChanged && len(args) == 0 && !stdinRedirected && !watchMode {
+		var err error
+		files, err = resolveRepoMarkdownFiles(currentRepoScope, !noIgnore)
+		if err != nil {
+			return err
+		}
+	} else {
+		if recursive && len(args) == 0 {
+			return fmt.Errorf("--recursive (-R) requires a directory argument")
+		}
 
-	files, patterns, err := resolveArgs(args, watchMode, recursive)
-	if err != nil {
-		return err
+		var err error
+		files, patterns, err = resolveArgs(args, watchMode, recursive)
+		if err != nil {
+			return err
+		}
 	}
 
 	if watchMode && len(patterns) == 0 {
@@ -388,7 +403,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// Detect redirected stdin when no positional arguments are given.
 	var stdinData *server.UploadedFileData
-	if isStdinRedirected() {
+	if stdinRedirected {
 		if len(args) > 0 {
 			return fmt.Errorf("cannot use redirected stdin with positional arguments")
 		}
@@ -572,6 +587,68 @@ func resolveRepoScope(repoPath string) (server.RepoScope, error) {
 		Root: filepath.Clean(root),
 		Name: filepath.Base(root),
 	}, nil
+}
+
+func resolveRepoMarkdownFiles(scope server.RepoScope, respectIgnore bool) ([]string, error) {
+	if !scope.Enabled() {
+		return nil, nil
+	}
+	if respectIgnore {
+		return resolveRepoMarkdownFilesFromGit(scope)
+	}
+	return resolveRepoMarkdownFilesFromFS(scope)
+}
+
+func resolveRepoMarkdownFilesFromGit(scope server.RepoScope) ([]string, error) {
+	out, err := exec.Command("git", "-C", scope.Root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.md").Output() //nolint:gosec
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Markdown files in repository %s: %w", scope.Root, err)
+	}
+
+	var files []string
+	for raw := range bytes.SplitSeq(out, []byte{0}) {
+		if len(raw) == 0 {
+			continue
+		}
+		abs := filepath.Join(scope.Root, filepath.FromSlash(string(raw)))
+		if isExistingFile(abs) {
+			files = append(files, abs)
+		}
+	}
+	collate.New(language.Und, collate.Numeric).SortStrings(files)
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no .md files in repository %s", scope.Root)
+	}
+	return files, nil
+}
+
+func resolveRepoMarkdownFilesFromFS(scope server.RepoScope) ([]string, error) {
+	files, err := expandGlobPattern(filepath.Join(scope.Root, markdownGlobRecursive))
+	if err != nil {
+		return nil, err
+	}
+	filtered := files[:0]
+	for _, f := range files {
+		rel, err := filepath.Rel(scope.Root, f)
+		if err != nil {
+			continue
+		}
+		if rel == ".git" || strings.HasPrefix(rel, ".git"+string(filepath.Separator)) {
+			continue
+		}
+		if isExistingFile(f) {
+			filtered = append(filtered, f)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("no .md files in repository %s", scope.Root)
+	}
+	return filtered, nil
+}
+
+func isExistingFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // filterValidRestoreData validates restore data by checking that file paths still exist.

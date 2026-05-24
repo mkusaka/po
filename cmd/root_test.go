@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -877,6 +878,15 @@ func writeTestFile(t *testing.T, path string, content []byte) {
 	}
 }
 
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, out)
+	}
+}
+
 func TestResolveArgs_Directory(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "a.md"), []byte("# A"))
@@ -990,6 +1000,57 @@ func TestResolveArgs_DirectoryRecursive(t *testing.T) {
 	wantNested := filepath.Join(sub, "b.md")
 	if !slices.Contains(files, wantNested) {
 		t.Errorf("recursive expansion missed nested file %q in %v", wantNested, files)
+	}
+}
+
+func TestResolveRepoMarkdownFiles(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+
+	root := t.TempDir()
+	runGit(t, root, "init")
+	writeTestFile(t, filepath.Join(root, "README.md"), []byte("# README"))
+	docs := filepath.Join(root, "docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(docs, "guide.md"), []byte("# Guide"))
+	writeTestFile(t, filepath.Join(root, ".gitignore"), []byte("ignored.md\nvendor/\n"))
+	writeTestFile(t, filepath.Join(root, "ignored.md"), []byte("# Ignored"))
+	vendor := filepath.Join(root, "vendor")
+	if err := os.MkdirAll(vendor, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(vendor, "dep.md"), []byte("# Dep"))
+
+	scope := server.RepoScope{Root: root, Name: "repo"}
+	respecting, err := resolveRepoMarkdownFiles(scope, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !slices.Contains(respecting, filepath.Join(root, "README.md")) {
+		t.Fatalf("respecting ignore should include README.md: %v", respecting)
+	}
+	if !slices.Contains(respecting, filepath.Join(docs, "guide.md")) {
+		t.Fatalf("respecting ignore should include docs/guide.md: %v", respecting)
+	}
+	if slices.Contains(respecting, filepath.Join(root, "ignored.md")) {
+		t.Fatalf("respecting ignore should exclude ignored.md: %v", respecting)
+	}
+	if slices.Contains(respecting, filepath.Join(vendor, "dep.md")) {
+		t.Fatalf("respecting ignore should exclude vendor/dep.md: %v", respecting)
+	}
+
+	includingIgnored, err := resolveRepoMarkdownFiles(scope, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !slices.Contains(includingIgnored, filepath.Join(root, "ignored.md")) {
+		t.Fatalf("--no-ignore should include ignored.md: %v", includingIgnored)
+	}
+	if !slices.Contains(includingIgnored, filepath.Join(vendor, "dep.md")) {
+		t.Fatalf("--no-ignore should include vendor/dep.md: %v", includingIgnored)
 	}
 }
 

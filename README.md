@@ -55,6 +55,7 @@ $ po README.md                          # Open a single file
 $ po README.md CHANGELOG.md docs/*.md   # Open multiple files
 $ po docs/                              # Open all .md files in a directory
 $ po spec.md --target design            # Open in a named group
+$ po --repo                             # Open all repo Markdown files
 $ po --repo README.md                   # Use /repo-name?file=relative/path URLs
 $ cat notes.md | po                     # Read Markdown from stdin
 ```
@@ -94,12 +95,19 @@ $ po draft.md -p 6276
 
 Use `--repo` when you want links to be scoped to the current Git repository instead of exposing file URLs as machine-local entries. `po` detects the repository root, uses the repository name as the URL path, and addresses files by path relative to that root.
 
+With no file arguments, `po --repo` opens all Markdown files in the repository. It respects `.gitignore` by default, including tracked files and untracked files that are not ignored. Use `--no-ignore` to include ignored Markdown files too.
+
 ``` console
+$ po --repo
+# http://localhost:6275/po
+
 $ po --repo README.md
 # http://localhost:6275/po?file=README.md
 
 $ po --repo docs/guide.md
 # http://localhost:6275/po?file=docs/guide.md
+
+$ po --repo --no-ignore
 ```
 
 Pass a path to use a specific repository:
