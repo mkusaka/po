@@ -1,5 +1,9 @@
 # Changelog
 
+## [v1.5.5](https://github.com/mkusaka/po/commits/v1.5.5) - 2026-05-24
+### Other Changes
+- Add workflow lint by @mkusaka in https://github.com/mkusaka/po/pull/1
+
 ## [v1.5.5](https://github.com/k1LoW/mo/compare/v1.5.4...v1.5.5) - 2026-05-11
 ### Dependency Updates ⬆️
 - chore(deps): bump mermaid from 11.14.0 to 11.15.0 in /internal/frontend by @dependabot[bot] in https://github.com/k1LoW/mo/pull/210
