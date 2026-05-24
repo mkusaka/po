@@ -176,6 +176,19 @@ describe("App URL sync", () => {
     });
   });
 
+  it("uses tree view by default when no view mode is stored", async () => {
+    render(<App />);
+
+    expect(await screen.findByTitle("Switch to flat view")).toBeInTheDocument();
+  });
+
+  it("keeps a stored flat view preference", async () => {
+    localStorage.setItem("po-sidebar-viewmode", JSON.stringify({ default: "flat" }));
+    render(<App />);
+
+    expect(await screen.findByTitle("Switch to tree view")).toBeInTheDocument();
+  });
+
   it("pushes a new history entry on file selection (back returns to the previous file)", async () => {
     const user = userEvent.setup();
     render(<App />);

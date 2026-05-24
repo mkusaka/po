@@ -109,7 +109,7 @@ Key endpoints:
 - **Glob pattern watching**: `--watch` enables watch mode; positional arguments that are globs or directories are registered as patterns, expanded to matching files, and monitored for new files via fsnotify directory watches. Patterns are stored with reference-counted directory watches (`watchedDirs map[string]int`). `--unwatch` is a boolean flag; positional arguments (globs or directories) determine which patterns to remove. With `-R`, a directory argument removes all registered patterns under that directory prefix. Groups persist as long as they have files or patterns.
 - **Resizable panels**: Both `Sidebar.tsx` (left) and `TocPanel.tsx` (right) use the same drag-to-resize pattern with localStorage persistence. Left sidebar uses `e.clientX`, right panel uses `window.innerWidth - e.clientX`.
 - **Toolbar buttons in content area**: The toolbar column (ToC + Raw toggles) lives inside `MarkdownViewer.tsx`, positioned with `shrink-0 flex flex-col gap-2 -mr-4 -mt-4` to align with the header.
-- **Sidebar view modes**: Flat (default, with drag-and-drop reorder via dnd-kit) and tree (hierarchical directory view). View mode is persisted per-group in localStorage. Collapsed directory state is managed inside `TreeView` and also persisted per-group.
+- **Sidebar view modes**: Tree is the default hierarchical directory view. Flat view supports drag-and-drop reorder via dnd-kit. View mode is persisted per-group in localStorage. Collapsed directory state is managed inside `TreeView` and also persisted per-group.
 - **localStorage conventions**: All keys use `po-` prefix (e.g., `po-sidebar-width`, `po-sidebar-viewmode`, `po-sidebar-tree-collapsed`, `po-theme`). Read patterns use `try/catch` around `JSON.parse` with fallback defaults.
 
 ## CI/CD

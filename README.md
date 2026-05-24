@@ -174,7 +174,7 @@ Patterns are resolved to absolute paths before matching, so you can specify eith
 
 ### Sidebar view modes
 
-The sidebar supports flat and tree view modes. Flat view shows file names only, while tree view displays the directory hierarchy.
+The sidebar uses tree view by default and can be switched to flat view. Tree view displays the directory hierarchy, while flat view shows file names only and supports drag-and-drop reorder.
 
 | <img src="images/icons/view-flat.svg" height="16"> Flat | <img src="images/icons/view-tree.svg" height="16"> Tree |
 |------|------|
