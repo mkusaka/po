@@ -102,6 +102,16 @@ function AgenticSearchAnswer({ answer }: { answer: string }) {
   );
 }
 
+function AgenticSearchThinking({ thinking }: { thinking: string }) {
+  if (!thinking.trim()) return null;
+  return (
+    <details className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-gh-text-secondary break-words">
+      <summary className="cursor-pointer font-medium text-gh-text">Thinking</summary>
+      <div className="mt-1 whitespace-pre-wrap">{thinking}</div>
+    </details>
+  );
+}
+
 interface FileItemProps {
   file: FileEntry;
   activeGroup: string;
@@ -207,6 +217,8 @@ interface SidebarProps {
   agenticSearchEnabled?: boolean;
   agenticSearchLoading?: boolean;
   agenticSearchResult?: AgenticSearchResponse | null;
+  agenticSearchThinking?: string;
+  agenticSearchProgress?: string | null;
   agenticSearchError?: string | null;
   onAgenticSearch?: () => void;
   onSearchResultSelect?: (fileId: string, heading?: string) => void;
@@ -228,6 +240,8 @@ export function Sidebar({
   agenticSearchEnabled = false,
   agenticSearchLoading = false,
   agenticSearchResult = null,
+  agenticSearchThinking = "",
+  agenticSearchProgress = null,
   agenticSearchError = null,
   onAgenticSearch,
   onSearchResultSelect,
@@ -437,7 +451,15 @@ export function Sidebar({
                     {agenticSearchError}
                   </div>
                 )}
-                {agenticSearchResult && <AgenticSearchAnswer answer={agenticSearchResult.answer} />}
+                {agenticSearchProgress && (
+                  <div className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-gh-text-secondary whitespace-pre-wrap break-words">
+                    {agenticSearchProgress}
+                  </div>
+                )}
+                <AgenticSearchThinking thinking={agenticSearchThinking} />
+                {agenticSearchResult?.answer && (
+                  <AgenticSearchAnswer answer={agenticSearchResult.answer} />
+                )}
               </div>
             )}
             {searchLoading ? (

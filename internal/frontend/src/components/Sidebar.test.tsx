@@ -387,6 +387,39 @@ describe("Sidebar", () => {
     );
   });
 
+  it("renders streamed agentic search progress and thinking", () => {
+    render(
+      <Sidebar
+        groups={groups}
+        activeGroup="default"
+        activeFileId={null}
+        onFileSelect={() => {}}
+        onFilesReorder={() => {}}
+        viewMode="flat"
+        showTitle={false}
+        searchQuery="cache"
+        onSearchQueryChange={() => {}}
+        agenticSearchEnabled={true}
+        agenticSearchLoading={true}
+        agenticSearchProgress="$ rg cache"
+        agenticSearchThinking="Checking repo files"
+        agenticSearchResult={{
+          query: "cache",
+          group: "default",
+          repoRoot: "/repo",
+          repoName: "repo",
+          answer: "Partial answer",
+          elapsedMs: 0,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("$ rg cache")).toBeInTheDocument();
+    expect(screen.getByText("Thinking")).toBeInTheDocument();
+    expect(screen.getByText("Checking repo files")).toBeInTheDocument();
+    expect(screen.getByText("Partial answer")).toBeInTheDocument();
+  });
+
   it("toggles content matches section", async () => {
     const user = userEvent.setup();
     render(

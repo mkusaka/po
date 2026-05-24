@@ -79,6 +79,16 @@ export interface AgenticSearchResponse {
   elapsedMs: number;
 }
 
+export type AgenticSearchStreamEvent =
+  | { type: "started" }
+  | { type: "output_delta"; delta: string }
+  | { type: "thinking_delta"; delta: string }
+  | { type: "progress"; message: string }
+  | ({ type: "completed" } & AgenticSearchResponse)
+  | { type: "error"; message: string };
+
+export type AgenticSearchStreamHandler = (event: AgenticSearchStreamEvent) => void;
+
 function groupPath(group: string): string {
   return `/_/api/groups/${encodeURIComponent(group)}`;
 }
@@ -188,15 +198,82 @@ export async function fetchSearchResults(
 export async function runAgenticSearch(
   query: string,
   group: string,
+  onEvent?: AgenticSearchStreamHandler,
 ): Promise<AgenticSearchResponse> {
   const res = await fetch("/_/api/agentic-search", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(onEvent ? { Accept: "text/event-stream" } : {}),
+    },
     body: JSON.stringify({ query, group }),
   });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text.trim() || "Failed to run agentic search");
   }
-  return res.json();
+  if (!onEvent) {
+    return res.json();
+  }
+  if (!res.body) {
+    throw new Error("Agentic search stream is unavailable");
+  }
+
+  let completed: AgenticSearchResponse | null = null;
+  let streamError: Error | null = null;
+  await readAgenticSearchEvents(res.body, (event) => {
+    onEvent(event);
+    if (event.type === "completed") {
+      completed = {
+        query: event.query,
+        group: event.group,
+        repoRoot: event.repoRoot,
+        repoName: event.repoName,
+        answer: event.answer,
+        elapsedMs: event.elapsedMs,
+      };
+    } else if (event.type === "error") {
+      streamError = new Error(event.message);
+    }
+  });
+  if (streamError) {
+    throw streamError;
+  }
+  if (!completed) {
+    throw new Error("Agentic search stream ended before completion");
+  }
+  return completed;
+}
+
+async function readAgenticSearchEvents(
+  body: ReadableStream<Uint8Array>,
+  onEvent: AgenticSearchStreamHandler,
+) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer = (buffer + decoder.decode(value, { stream: !done })).replace(/\r\n/g, "\n");
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary !== -1) {
+      dispatchAgenticSearchEvent(buffer.slice(0, boundary), onEvent);
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf("\n\n");
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) {
+    dispatchAgenticSearchEvent(buffer, onEvent);
+  }
+}
+
+function dispatchAgenticSearchEvent(raw: string, onEvent: AgenticSearchStreamHandler) {
+  const data = raw
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n");
+  if (!data) return;
+  onEvent(JSON.parse(data) as AgenticSearchStreamEvent);
 }

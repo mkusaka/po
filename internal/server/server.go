@@ -1513,6 +1513,18 @@ type agenticSearchResponse struct {
 	ElapsedMs int64  `json:"elapsedMs"`
 }
 
+type agenticSearchStreamEvent struct {
+	Type      string `json:"type"`
+	Delta     string `json:"delta,omitempty"`
+	Message   string `json:"message,omitempty"`
+	Query     string `json:"query,omitempty"`
+	Group     string `json:"group,omitempty"`
+	RepoRoot  string `json:"repoRoot,omitempty"`
+	RepoName  string `json:"repoName,omitempty"`
+	Answer    string `json:"answer,omitempty"`
+	ElapsedMs int64  `json:"elapsedMs,omitempty"`
+}
+
 type openFileRequest struct {
 	FileID string `json:"fileId"`
 	Path   string `json:"path"`
@@ -1935,13 +1947,19 @@ func handleAgenticSearch(state *State) http.HandlerFunc {
 		defer cancel()
 
 		start := time.Now()
-		result, err := cfg.runner(ctx, AgenticSearchJob{
+		job := AgenticSearchJob{
 			Query:     req.Query,
 			RepoRoot:  scope.Root,
 			RepoName:  scope.Name,
 			Group:     groupName,
 			FilePaths: sortedRepoRelativeFilePaths(files, scope.Root),
-		})
+		}
+		if acceptsEventStream(r) {
+			handleAgenticSearchStream(ctx, w, cfg, job, start)
+			return
+		}
+
+		result, err := cfg.runner(ctx, job, nil)
 		if err != nil {
 			logAgenticSearchError(err)
 			http.Error(w, err.Error(), http.StatusBadGateway)
@@ -1961,6 +1979,64 @@ func handleAgenticSearch(state *State) http.HandlerFunc {
 			slog.Error("failed to encode response", "error", err)
 		}
 	}
+}
+
+func acceptsEventStream(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/event-stream")
+}
+
+func handleAgenticSearchStream(ctx context.Context, w http.ResponseWriter, cfg agenticSearchConfig, job AgenticSearchJob, start time.Time) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming is not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	if err := writeAgenticSearchSSE(w, flusher, agenticSearchStreamEvent{Type: "started"}); err != nil {
+		slog.Warn("failed to write agentic search stream", "error", err)
+		return
+	}
+	result, err := cfg.runner(ctx, job, func(event AgenticSearchEvent) error {
+		return writeAgenticSearchSSE(w, flusher, agenticSearchStreamEvent{
+			Type:    event.Type,
+			Delta:   event.Delta,
+			Message: event.Message,
+		})
+	})
+	if err != nil {
+		logAgenticSearchError(err)
+		writeAgenticSearchSSE(w, flusher, agenticSearchStreamEvent{Type: "error", Message: err.Error()}) //nolint:errcheck
+		return
+	}
+
+	if err := writeAgenticSearchSSE(w, flusher, agenticSearchStreamEvent{
+		Type:      "completed",
+		Query:     job.Query,
+		Group:     job.Group,
+		RepoRoot:  job.RepoRoot,
+		RepoName:  job.RepoName,
+		Answer:    result.Answer,
+		ElapsedMs: time.Since(start).Milliseconds(),
+	}); err != nil {
+		slog.Warn("failed to write agentic search stream", "error", err)
+	}
+}
+
+func writeAgenticSearchSSE(w io.Writer, flusher http.Flusher, event agenticSearchStreamEvent) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: agentic-search\ndata: %s\n\n", data); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
 }
 
 func readSearchableContent(entry *FileEntry) (string, error) {

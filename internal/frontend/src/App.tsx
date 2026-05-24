@@ -20,7 +20,13 @@ import { useSSE } from "./hooks/useSSE";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { useActiveHeading } from "./hooks/useActiveHeading";
 import { useScrollRestoration, SCROLL_SESSION_KEY } from "./hooks/useScrollRestoration";
-import type { AgenticSearchResponse, FileEntry, Group, SearchResult } from "./hooks/useApi";
+import type {
+  AgenticSearchResponse,
+  AgenticSearchStreamEvent,
+  FileEntry,
+  Group,
+  SearchResult,
+} from "./hooks/useApi";
 import {
   fetchGroups,
   fetchSearchResults,
@@ -110,7 +116,10 @@ export function App() {
   const [agenticSearchResult, setAgenticSearchResult] = useState<AgenticSearchResponse | null>(
     null,
   );
+  const [agenticSearchThinking, setAgenticSearchThinking] = useState("");
+  const [agenticSearchProgress, setAgenticSearchProgress] = useState<string | null>(null);
   const [agenticSearchError, setAgenticSearchError] = useState<string | null>(null);
+  const agenticSearchRequestId = useRef(0);
   const [pendingSearchHeading, setPendingSearchHeading] = useState<string | null>(null);
   const [viewModes, setViewModes] = useState<Record<string, ViewMode>>(() => {
     try {
@@ -321,8 +330,12 @@ export function App() {
   }, [searchQuery, activeGroup]);
 
   useEffect(() => {
+    agenticSearchRequestId.current += 1;
     setAgenticSearchResult(null);
+    setAgenticSearchThinking("");
+    setAgenticSearchProgress(null);
     setAgenticSearchError(null);
+    setAgenticSearchLoading(false);
   }, [searchQuery, activeGroup]);
 
   const activeFile = useMemo(
@@ -438,18 +451,85 @@ export function App() {
   const handleAgenticSearch = useCallback(() => {
     const query = searchQuery?.trim();
     if (!query || agenticSearchLoading) return;
+    const requestId = agenticSearchRequestId.current + 1;
+    agenticSearchRequestId.current = requestId;
     setAgenticSearchLoading(true);
+    setAgenticSearchResult({
+      query,
+      group: activeGroup,
+      repoRoot: "",
+      repoName: "",
+      answer: "",
+      elapsedMs: 0,
+    });
+    setAgenticSearchThinking("");
+    setAgenticSearchProgress(null);
     setAgenticSearchError(null);
-    runAgenticSearch(query, activeGroup)
+    const applyIfCurrent = (apply: () => void) => {
+      if (agenticSearchRequestId.current === requestId) {
+        apply();
+      }
+    };
+    const handleStreamEvent = (event: AgenticSearchStreamEvent) => {
+      applyIfCurrent(() => {
+        switch (event.type) {
+          case "started":
+            setAgenticSearchProgress("Starting Codex...");
+            break;
+          case "thinking_delta":
+            setAgenticSearchThinking((prev) => prev + event.delta);
+            break;
+          case "output_delta":
+            setAgenticSearchResult((prev) => ({
+              query,
+              group: activeGroup,
+              repoRoot: prev?.repoRoot ?? "",
+              repoName: prev?.repoName ?? "",
+              answer: `${prev?.answer ?? ""}${event.delta}`,
+              elapsedMs: prev?.elapsedMs ?? 0,
+            }));
+            break;
+          case "progress":
+            setAgenticSearchProgress(event.message);
+            break;
+          case "completed":
+            setAgenticSearchResult({
+              query: event.query,
+              group: event.group,
+              repoRoot: event.repoRoot,
+              repoName: event.repoName,
+              answer: event.answer,
+              elapsedMs: event.elapsedMs,
+            });
+            setAgenticSearchProgress(null);
+            break;
+          case "error":
+            setAgenticSearchError(event.message);
+            setAgenticSearchProgress(null);
+            break;
+        }
+      });
+    };
+    runAgenticSearch(query, activeGroup, handleStreamEvent)
       .then((resp) => {
-        setAgenticSearchResult(resp);
+        applyIfCurrent(() => {
+          setAgenticSearchResult(resp);
+          setAgenticSearchProgress(null);
+        });
       })
       .catch((err) => {
-        setAgenticSearchResult(null);
-        setAgenticSearchError(err instanceof Error ? err.message : "Failed to run agentic search");
+        applyIfCurrent(() => {
+          setAgenticSearchResult(null);
+          setAgenticSearchProgress(null);
+          setAgenticSearchError(
+            err instanceof Error ? err.message : "Failed to run agentic search",
+          );
+        });
       })
       .finally(() => {
-        setAgenticSearchLoading(false);
+        applyIfCurrent(() => {
+          setAgenticSearchLoading(false);
+        });
       });
   }, [activeGroup, agenticSearchLoading, searchQuery]);
 
@@ -614,6 +694,8 @@ export function App() {
             agenticSearchEnabled={agenticSearchEnabled}
             agenticSearchLoading={agenticSearchLoading}
             agenticSearchResult={agenticSearchResult}
+            agenticSearchThinking={agenticSearchThinking}
+            agenticSearchProgress={agenticSearchProgress}
             agenticSearchError={agenticSearchError}
             onAgenticSearch={handleAgenticSearch}
             onSearchResultSelect={handleSearchResultSelect}

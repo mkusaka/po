@@ -36,8 +36,24 @@ type AgenticSearchResult struct {
 	Answer string
 }
 
+const (
+	AgenticSearchEventOutputDelta   = "output_delta"
+	AgenticSearchEventThinkingDelta = "thinking_delta"
+	AgenticSearchEventProgress      = "progress"
+)
+
+// AgenticSearchEvent is emitted by an agentic search runner while it is running.
+type AgenticSearchEvent struct {
+	Type    string `json:"type"`
+	Delta   string `json:"delta,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// AgenticSearchEventWriter forwards runner events to the caller.
+type AgenticSearchEventWriter func(AgenticSearchEvent) error
+
 // AgenticSearchRunner runs an agentic search against a repository.
-type AgenticSearchRunner func(context.Context, AgenticSearchJob) (AgenticSearchResult, error)
+type AgenticSearchRunner func(context.Context, AgenticSearchJob, AgenticSearchEventWriter) (AgenticSearchResult, error)
 
 type agenticSearchConfig struct {
 	enabled bool
@@ -215,7 +231,7 @@ func (c *appServerClient) write(msg map[string]any) error {
 	return err
 }
 
-func runCodexAgenticSearch(ctx context.Context, job AgenticSearchJob) (AgenticSearchResult, error) {
+func runCodexAgenticSearch(ctx context.Context, job AgenticSearchJob, emit AgenticSearchEventWriter) (AgenticSearchResult, error) {
 	client, err := newAppServerClient(ctx, job.RepoRoot)
 	if err != nil {
 		return AgenticSearchResult{}, fmt.Errorf("failed to start codex app-server: %w", err)
@@ -284,9 +300,17 @@ func runCodexAgenticSearch(ctx context.Context, job AgenticSearchJob) (AgenticSe
 	var answer strings.Builder
 	var completed map[string]any
 	for completed == nil {
-		err := client.readNotification(func(msg map[string]any) bool {
+		err := client.readNotification(func(msg map[string]any) (bool, error) {
 			method, _ := msg["method"].(string)
 			params, _ := msg["params"].(map[string]any)
+			if params == nil {
+				params = map[string]any{}
+			}
+			if event, ok := agenticSearchEventFromNotification(method, params, threadID, turnID); ok {
+				if err := emitAgenticSearchEvent(emit, event); err != nil {
+					return true, err
+				}
+			}
 			switch method {
 			case "item/agentMessage/delta":
 				if params["turnId"] == turnID {
@@ -298,7 +322,7 @@ func runCodexAgenticSearch(ctx context.Context, job AgenticSearchJob) (AgenticSe
 				if params["threadId"] == threadID {
 					if turn, ok := params["turn"].(map[string]any); ok && turn["id"] == turnID {
 						completed = turn
-						return true
+						return true, nil
 					}
 				}
 			case "error":
@@ -309,10 +333,10 @@ func runCodexAgenticSearch(ctx context.Context, job AgenticSearchJob) (AgenticSe
 							"message": message,
 						},
 					}
-					return true
+					return true, nil
 				}
 			}
-			return false
+			return false, nil
 		})
 		if err != nil {
 			return AgenticSearchResult{}, err
@@ -332,7 +356,65 @@ func runCodexAgenticSearch(ctx context.Context, job AgenticSearchJob) (AgenticSe
 	return AgenticSearchResult{Answer: result}, nil
 }
 
-func (c *appServerClient) readNotification(onNotification func(map[string]any) bool) error {
+func emitAgenticSearchEvent(emit AgenticSearchEventWriter, event AgenticSearchEvent) error {
+	if emit == nil || event.Type == "" {
+		return nil
+	}
+	return emit(event)
+}
+
+func agenticSearchEventFromNotification(method string, params map[string]any, threadID, turnID string) (AgenticSearchEvent, bool) {
+	if !notificationMatchesTurn(params, threadID, turnID) {
+		return AgenticSearchEvent{}, false
+	}
+	switch method {
+	case "item/agentMessage/delta":
+		return agenticSearchDeltaEvent(AgenticSearchEventOutputDelta, params)
+	case "item/reasoning/summaryTextDelta", "item/plan/delta":
+		return agenticSearchDeltaEvent(AgenticSearchEventThinkingDelta, params)
+	case "item/started":
+		return agenticSearchItemStartedEvent(params)
+	}
+	return AgenticSearchEvent{}, false
+}
+
+func notificationMatchesTurn(params map[string]any, threadID, turnID string) bool {
+	if params == nil {
+		return false
+	}
+	return params["threadId"] == threadID && params["turnId"] == turnID
+}
+
+func agenticSearchDeltaEvent(eventType string, params map[string]any) (AgenticSearchEvent, bool) {
+	delta, _ := params["delta"].(string)
+	if delta == "" {
+		return AgenticSearchEvent{}, false
+	}
+	return AgenticSearchEvent{Type: eventType, Delta: delta}, true
+}
+
+func agenticSearchItemStartedEvent(params map[string]any) (AgenticSearchEvent, bool) {
+	item, _ := params["item"].(map[string]any)
+	itemType, _ := item["type"].(string)
+	switch itemType {
+	case "commandExecution":
+		command, _ := item["command"].(string)
+		if command == "" {
+			return AgenticSearchEvent{}, false
+		}
+		return AgenticSearchEvent{Type: AgenticSearchEventProgress, Message: "$ " + command}, true
+	case "mcpToolCall":
+		name, _ := item["name"].(string)
+		if name == "" {
+			return AgenticSearchEvent{}, false
+		}
+		return AgenticSearchEvent{Type: AgenticSearchEventProgress, Message: name}, true
+	default:
+		return AgenticSearchEvent{}, false
+	}
+}
+
+func (c *appServerClient) readNotification(onNotification func(map[string]any) (bool, error)) error {
 	for c.stdout.Scan() {
 		line := c.stdout.Bytes()
 		var msg map[string]any
@@ -349,8 +431,14 @@ func (c *appServerClient) readNotification(onNotification func(map[string]any) b
 				}
 				continue
 			}
-			if onNotification != nil && onNotification(msg) {
-				return nil
+			if onNotification != nil {
+				done, err := onNotification(msg)
+				if err != nil {
+					return err
+				}
+				if done {
+					return nil
+				}
 			}
 		}
 	}

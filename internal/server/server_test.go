@@ -1723,7 +1723,7 @@ func TestAgenticSearch(t *testing.T) {
 
 		s.EnableAgenticSearch(0)
 		var got AgenticSearchJob
-		s.SetAgenticSearchRunner(func(_ context.Context, job AgenticSearchJob) (AgenticSearchResult, error) {
+		s.SetAgenticSearchRunner(func(_ context.Context, job AgenticSearchJob, _ AgenticSearchEventWriter) (AgenticSearchResult, error) {
 			got = job
 			return AgenticSearchResult{Answer: "docs/guide.md:1 has it"}, nil
 		})
@@ -1751,6 +1751,51 @@ func TestAgenticSearch(t *testing.T) {
 		wantFiles := []string{"README.md", filepath.Join("docs", "guide.md")}
 		if fmt.Sprint(got.FilePaths) != fmt.Sprint(wantFiles) {
 			t.Fatalf("got files %v, want %v", got.FilePaths, wantFiles)
+		}
+	})
+
+	t.Run("streams configured runner events", func(t *testing.T) {
+		s := newTestState(t)
+		root := t.TempDir()
+		s.SetRepoScope(RepoScope{Root: root, Name: "repo"})
+		s.EnableAgenticSearch(0)
+		s.SetAgenticSearchRunner(func(_ context.Context, job AgenticSearchJob, emit AgenticSearchEventWriter) (AgenticSearchResult, error) {
+			if job.Query != "where is guide?" {
+				t.Fatalf("got query %q", job.Query)
+			}
+			if err := emit(AgenticSearchEvent{Type: AgenticSearchEventThinkingDelta, Delta: "Looking"}); err != nil {
+				return AgenticSearchResult{}, err
+			}
+			if err := emit(AgenticSearchEvent{Type: AgenticSearchEventOutputDelta, Delta: "docs/"}); err != nil {
+				return AgenticSearchResult{}, err
+			}
+			return AgenticSearchResult{Answer: "docs/guide.md:1 has it"}, nil
+		})
+
+		handler := NewHandler(s)
+		body := []byte(`{"query":"where is guide?"}`)
+		req := httptest.NewRequest(http.MethodPost, "/_/api/agentic-search", bytes.NewReader(body))
+		req.Header.Set("Accept", "text/event-stream")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got status %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+		}
+		if contentType := rec.Header().Get("Content-Type"); contentType != "text/event-stream" {
+			t.Fatalf("got content-type %q", contentType)
+		}
+		gotBody := rec.Body.String()
+		for _, want := range []string{
+			`"type":"started"`,
+			`"type":"thinking_delta","delta":"Looking"`,
+			`"type":"output_delta","delta":"docs/"`,
+			`"type":"completed"`,
+			`"answer":"docs/guide.md:1 has it"`,
+		} {
+			if !strings.Contains(gotBody, want) {
+				t.Fatalf("stream body does not contain %q: %s", want, gotBody)
+			}
 		}
 	})
 }

@@ -6,6 +6,7 @@ import {
   reorderFiles,
   moveFile,
   uploadFile,
+  runAgenticSearch,
 } from "./useApi";
 
 beforeEach(() => {
@@ -224,5 +225,53 @@ describe("uploadFile", () => {
     await expect(uploadFile("test.md", "# Hello", "default")).rejects.toThrow(
       "Failed to upload file",
     );
+  });
+});
+
+describe("runAgenticSearch", () => {
+  it("streams agentic search events and returns the completed response", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            [
+              'event: agentic-search\ndata: {"type":"started"}\n\n',
+              'event: agentic-search\ndata: {"type":"thinking_delta","delta":"Looking"}\n\n',
+              'event: agentic-search\ndata: {"type":"output_delta","delta":"docs/"}\n\n',
+              'event: agentic-search\ndata: {"type":"completed","query":"cache","group":"default","repoRoot":"/repo","repoName":"repo","answer":"docs/guide.md:1","elapsedMs":12}\n\n',
+            ].join(""),
+          ),
+        );
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        body: stream,
+      }),
+    );
+    const events: string[] = [];
+
+    const result = await runAgenticSearch("cache", "default", (event) => {
+      events.push(event.type);
+    });
+
+    expect(result).toEqual({
+      query: "cache",
+      group: "default",
+      repoRoot: "/repo",
+      repoName: "repo",
+      answer: "docs/guide.md:1",
+      elapsedMs: 12,
+    });
+    expect(events).toEqual(["started", "thinking_delta", "output_delta", "completed"]);
+    expect(fetch).toHaveBeenCalledWith("/_/api/agentic-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({ query: "cache", group: "default" }),
+    });
   });
 });
