@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   DndContext,
   closestCenter,
@@ -24,6 +26,7 @@ import type { ViewMode } from "./ViewModeToggle";
 import { TreeView } from "./TreeView";
 import { FileContextMenu } from "./FileContextMenu";
 import { FileIcon } from "./FileIcon";
+import type { Components } from "react-markdown";
 
 const MIN_WIDTH = 180;
 const MAX_WIDTH = 480;
@@ -53,6 +56,49 @@ function renderHighlightedText(text: string, query: string) {
     ) : (
       <span key={`${part}:${index}`}>{part}</span>
     ),
+  );
+}
+
+const agenticSearchMarkdownComponents: Components = {
+  a: ({ href, children, ...props }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+      {children}
+    </a>
+  ),
+  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  h1: ({ children }) => <h3 className="mb-2 text-sm font-semibold text-gh-text">{children}</h3>,
+  h2: ({ children }) => <h3 className="mb-2 text-sm font-semibold text-gh-text">{children}</h3>,
+  h3: ({ children }) => <h4 className="mb-1.5 text-xs font-semibold text-gh-text">{children}</h4>,
+  ul: ({ children }) => <ul className="mb-2 list-disc pl-4 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-2 list-decimal pl-4 last:mb-0">{children}</ol>,
+  li: ({ children }) => <li className="my-0.5">{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote className="mb-2 border-l-2 border-gh-border pl-2 text-gh-text-secondary last:mb-0">
+      {children}
+    </blockquote>
+  ),
+  code: ({ children, className, ...props }) => (
+    <code
+      className={`rounded-sm bg-gh-bg px-1 py-0.5 font-mono text-[0.95em] text-gh-text ${className ?? ""}`}
+      {...props}
+    >
+      {children}
+    </code>
+  ),
+  pre: ({ children }) => (
+    <pre className="mb-2 overflow-x-auto rounded-sm bg-gh-bg p-2 text-xs leading-5 text-gh-text last:mb-0">
+      {children}
+    </pre>
+  ),
+};
+
+function AgenticSearchAnswer({ answer }: { answer: string }) {
+  return (
+    <div className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-gh-text-secondary break-words">
+      <Markdown remarkPlugins={[remarkGfm]} components={agenticSearchMarkdownComponents}>
+        {answer}
+      </Markdown>
+    </div>
   );
 }
 
@@ -391,11 +437,7 @@ export function Sidebar({
                     {agenticSearchError}
                   </div>
                 )}
-                {agenticSearchResult && (
-                  <div className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-gh-text-secondary whitespace-pre-wrap break-words">
-                    {agenticSearchResult.answer}
-                  </div>
-                )}
+                {agenticSearchResult && <AgenticSearchAnswer answer={agenticSearchResult.answer} />}
               </div>
             )}
             {searchLoading ? (

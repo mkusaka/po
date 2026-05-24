@@ -356,6 +356,37 @@ describe("Sidebar", () => {
     expect(screen.getByText(hasTextContent("cache line"))).toBeInTheDocument();
   });
 
+  it("renders agentic search answers as Markdown", () => {
+    render(
+      <Sidebar
+        groups={groups}
+        activeGroup="default"
+        activeFileId={null}
+        onFileSelect={() => {}}
+        onFilesReorder={() => {}}
+        viewMode="flat"
+        showTitle={false}
+        searchQuery="cache"
+        onSearchQueryChange={() => {}}
+        agenticSearchEnabled={true}
+        agenticSearchResult={{
+          query: "cache",
+          group: "default",
+          repoRoot: "/repo",
+          repoName: "repo",
+          answer: "**Summary**\n\n- `README.md` has cache notes",
+          elapsedMs: 100,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Summary").tagName).toBe("STRONG");
+    expect(screen.getByText("README.md").tagName).toBe("CODE");
+    expect(screen.getByText("README.md").closest("li")).toHaveTextContent(
+      "README.md has cache notes",
+    );
+  });
+
   it("toggles content matches section", async () => {
     const user = userEvent.setup();
     render(
