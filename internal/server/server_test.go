@@ -1518,6 +1518,87 @@ func TestUploadedFileContent(t *testing.T) {
 	})
 }
 
+func TestOpenFileInEditor(t *testing.T) {
+	t.Run("opens filesystem file with selected editor", func(t *testing.T) {
+		s := newTestState(t)
+		path := filepath.Join(t.TempDir(), "README.md")
+		if err := os.WriteFile(path, []byte("# README"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		entry, err := s.AddFile(path, DefaultGroup)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var gotEditor, gotPath string
+		oldOpenFileInEditor := openFileInEditor
+		openFileInEditor = func(editorID, path string) error {
+			gotEditor = editorID
+			gotPath = path
+			return nil
+		}
+		t.Cleanup(func() { openFileInEditor = oldOpenFileInEditor })
+
+		handler := NewHandler(s)
+		req := httptest.NewRequest(
+			http.MethodPost,
+			fmt.Sprintf("/_/api/groups/default/files/%s/editor", entry.ID),
+			bytes.NewReader([]byte(`{"editor":"zed"}`)),
+		)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("got status %d, want %d: %s", rec.Code, http.StatusNoContent, rec.Body.String())
+		}
+		if gotEditor != "zed" || gotPath != path {
+			t.Fatalf("got editor=%q path=%q, want zed %q", gotEditor, gotPath, path)
+		}
+	})
+
+	t.Run("rejects uploaded file", func(t *testing.T) {
+		s := newTestState(t)
+		entry := s.AddUploadedFile("upload.md", "# Uploaded", DefaultGroup)
+		handler := NewHandler(s)
+		req := httptest.NewRequest(
+			http.MethodPost,
+			fmt.Sprintf("/_/api/groups/default/files/%s/editor", entry.ID),
+			bytes.NewReader([]byte(`{"editor":"zed"}`)),
+		)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("rejects unsupported editor", func(t *testing.T) {
+		s := newTestState(t)
+		path := filepath.Join(t.TempDir(), "README.md")
+		if err := os.WriteFile(path, []byte("# README"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		entry, err := s.AddFile(path, DefaultGroup)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		handler := NewHandler(s)
+		req := httptest.NewRequest(
+			http.MethodPost,
+			fmt.Sprintf("/_/api/groups/default/files/%s/editor", entry.ID),
+			bytes.NewReader([]byte(`{"editor":"missing"}`)),
+		)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("got status %d, want %d", rec.Code, http.StatusBadRequest)
+		}
+	})
+}
+
 func TestSearch(t *testing.T) {
 	t.Run("searches file contents within a group", func(t *testing.T) {
 		s := newTestState(t)

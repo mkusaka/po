@@ -3,6 +3,7 @@ import {
   fetchGroups,
   fetchFileContent,
   openRelativeFile,
+  openFileInEditor,
   reorderFiles,
   moveFile,
   uploadFile,
@@ -104,6 +105,34 @@ describe("openRelativeFile", () => {
 
     await expect(openRelativeFile("default", "aaa11111", "missing.md")).rejects.toThrow(
       "Failed to open file",
+    );
+  });
+});
+
+describe("openFileInEditor", () => {
+  it("sends POST with correct body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+
+    await openFileInEditor("default", "ccc33333", "zed");
+
+    expect(fetch).toHaveBeenCalledWith("/_/api/groups/default/files/ccc33333/editor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ editor: "zed" }),
+    });
+  });
+
+  it("throws with server error message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        text: () => Promise.resolve("unsupported editor\n"),
+      }),
+    );
+
+    await expect(openFileInEditor("default", "ccc33333", "missing")).rejects.toThrow(
+      "unsupported editor",
     );
   });
 });

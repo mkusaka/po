@@ -124,6 +124,22 @@ export async function openRelativeFile(
   return res.json();
 }
 
+export async function openFileInEditor(
+  group: string,
+  fileId: string,
+  editor: string,
+): Promise<void> {
+  const res = await fetch(`${groupPath(group)}/files/${fileId}/editor`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ editor }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text.trim() || "Failed to open file in editor");
+  }
+}
+
 export async function removeFile(group: string, id: string): Promise<void> {
   const res = await fetch(`${groupPath(group)}/files/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to remove file");

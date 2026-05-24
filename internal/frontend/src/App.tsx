@@ -8,6 +8,7 @@ import { GroupDropdown } from "./components/GroupDropdown";
 import { ViewModeToggle, type ViewMode } from "./components/ViewModeToggle";
 import { FileSortToggle } from "./components/FileSortToggle";
 import { HeaderFilePath } from "./components/HeaderFilePath";
+import { OpenInEditorButton } from "./components/OpenInEditorButton";
 import { SearchToggle } from "./components/SearchToggle";
 import { TitleToggle } from "./components/TitleToggle";
 import { RestartButton } from "./components/RestartButton";
@@ -701,6 +702,11 @@ export function App() {
         <SearchToggle isOpen={searchQuery != null} onToggle={handleSearchToggle} />
         <HeaderFilePath path={activeFilePath} isRelative={activeFile?.relativePath != null} />
         <div className="shrink-0 flex items-center gap-2">
+          <OpenInEditorButton
+            group={activeGroup}
+            fileId={activeFileId}
+            uploaded={activeFile?.uploaded}
+          />
           <FontSizeToggle fontSize={fontSize} onChange={setFontSize} />
           <WidthToggle isWide={isWide} onToggle={() => setIsWide((v) => !v)} />
           <ThemeToggle />
