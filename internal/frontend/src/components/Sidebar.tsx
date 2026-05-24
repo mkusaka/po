@@ -93,22 +93,92 @@ const agenticSearchMarkdownComponents: Components = {
 };
 
 function AgenticSearchAnswer({ answer }: { answer: string }) {
+  if (!answer.trim()) return null;
   return (
-    <div className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-gh-text-secondary break-words">
-      <Markdown remarkPlugins={[remarkGfm]} components={agenticSearchMarkdownComponents}>
-        {answer}
-      </Markdown>
-    </div>
+    <Markdown remarkPlugins={[remarkGfm]} components={agenticSearchMarkdownComponents}>
+      {answer}
+    </Markdown>
   );
 }
 
 function AgenticSearchThinking({ thinking }: { thinking: string }) {
   if (!thinking.trim()) return null;
   return (
-    <details className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-gh-text-secondary break-words">
+    <details className="mb-2 rounded-sm bg-gh-bg px-2 py-1.5 text-xs leading-5 text-gh-text-secondary break-words">
       <summary className="cursor-pointer font-medium text-gh-text">Thinking</summary>
       <div className="mt-1 whitespace-pre-wrap">{thinking}</div>
     </details>
+  );
+}
+
+interface AgenticSearchChatProps {
+  query: string;
+  loading: boolean;
+  result: AgenticSearchResponse | null;
+  thinking: string;
+  progress: string | null;
+  error: string | null;
+}
+
+function AgenticSearchChat({
+  query,
+  loading,
+  result,
+  thinking,
+  progress,
+  error,
+}: AgenticSearchChatProps) {
+  const hasTranscript =
+    loading || result != null || thinking.trim() !== "" || progress != null || error != null;
+  if (!hasTranscript) return null;
+
+  const displayQuery = result?.query || query.trim();
+  const answer = result?.answer ?? "";
+  const hasAssistantContent =
+    loading || progress != null || thinking.trim() !== "" || answer.trim() !== "" || error != null;
+
+  return (
+    <div className="border-b border-gh-border px-3 py-3">
+      <div role="log" aria-label="Codex chat" aria-live="polite" className="space-y-3">
+        {displayQuery && (
+          <div className="flex justify-end">
+            <div className="max-w-[88%] rounded-md border border-gh-border bg-gh-bg px-3 py-2 text-sm leading-5 text-gh-text whitespace-pre-wrap break-words shadow-sm">
+              {displayQuery}
+            </div>
+          </div>
+        )}
+        {hasAssistantContent && (
+          <div className="flex items-start gap-2">
+            <div
+              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gh-border bg-gh-bg text-[11px] font-semibold text-gh-text-secondary"
+              aria-hidden="true"
+            >
+              C
+            </div>
+            <div className="min-w-0 flex-1 rounded-md border border-gh-border bg-gh-bg-secondary px-3 py-2 text-sm leading-5 text-gh-text shadow-sm">
+              {progress && (
+                <div className="mb-2 rounded-sm bg-gh-bg px-2 py-1.5 text-xs leading-5 text-gh-text-secondary whitespace-pre-wrap break-words">
+                  {progress}
+                </div>
+              )}
+              <AgenticSearchThinking thinking={thinking} />
+              {error && (
+                <div className="mb-2 rounded-sm bg-gh-bg px-2 py-1.5 text-xs leading-5 text-[var(--fgColor-danger)] whitespace-pre-wrap break-words last:mb-0">
+                  {error}
+                </div>
+              )}
+              {answer.trim() !== "" ? (
+                <div className="text-gh-text-secondary break-words">
+                  <AgenticSearchAnswer answer={answer} />
+                </div>
+              ) : loading && !error ? (
+                <div className="text-sm text-gh-text-secondary">Thinking...</div>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -254,6 +324,12 @@ export function Sidebar({
 
   const searchOpen = searchQuery != null;
   const isSearching = searchQuery != null && searchQuery.length > 0;
+  const agenticSearchHasTranscript =
+    agenticSearchLoading ||
+    agenticSearchResult != null ||
+    agenticSearchThinking.trim() !== "" ||
+    agenticSearchProgress != null ||
+    agenticSearchError != null;
 
   const filteredFiles = useMemo(() => {
     if (!searchQuery) return allFiles;
@@ -418,49 +494,57 @@ export function Sidebar({
     >
       {searchOpen && (
         <div className="px-2 pt-2 pb-1">
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") onSearchQueryChange(null);
-            }}
-            placeholder="Search files..."
-            className="w-full px-2 py-1.5 text-sm bg-gh-bg border border-gh-border rounded-md text-gh-text placeholder:text-gh-text-secondary outline-none focus:border-gh-accent"
-          />
+          <div className="flex gap-1.5">
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchQueryChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  onSearchQueryChange(null);
+                  return;
+                }
+                if (
+                  e.key === "Enter" &&
+                  agenticSearchEnabled &&
+                  !agenticSearchLoading &&
+                  searchQuery?.trim()
+                ) {
+                  e.preventDefault();
+                  onAgenticSearch?.();
+                }
+              }}
+              placeholder={agenticSearchEnabled ? "Search or ask Codex..." : "Search files..."}
+              className="min-w-0 flex-1 px-2 py-1.5 text-sm bg-gh-bg border border-gh-border rounded-md text-gh-text placeholder:text-gh-text-secondary outline-none focus:border-gh-accent"
+            />
+            {agenticSearchEnabled && (
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-gh-border bg-gh-bg px-2.5 py-1.5 text-sm font-medium text-gh-text transition-colors hover:bg-gh-bg-hover disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={onAgenticSearch}
+                disabled={agenticSearchLoading || !searchQuery?.trim()}
+                aria-label="Send to Codex"
+                title="Send to Codex"
+              >
+                Send
+              </button>
+            )}
+          </div>
         </div>
       )}
       <nav className="flex flex-col pb-1">
         {isSearching ? (
           <>
             {agenticSearchEnabled && (
-              <div className="border-b border-gh-border px-3 py-2">
-                <button
-                  type="button"
-                  className="w-full rounded-md border border-gh-border bg-gh-bg px-2 py-1.5 text-sm font-medium text-gh-text transition-colors hover:bg-gh-bg-hover disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={onAgenticSearch}
-                  disabled={agenticSearchLoading || !searchQuery?.trim()}
-                  aria-label="Ask Codex"
-                  title="Ask Codex"
-                >
-                  {agenticSearchLoading ? "Asking Codex..." : "Ask Codex"}
-                </button>
-                {agenticSearchError && (
-                  <div className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-[var(--fgColor-danger)] whitespace-pre-wrap break-words">
-                    {agenticSearchError}
-                  </div>
-                )}
-                {agenticSearchProgress && (
-                  <div className="mt-2 rounded-sm bg-gh-bg-hover/80 px-2 py-1.5 text-xs leading-5 text-gh-text-secondary whitespace-pre-wrap break-words">
-                    {agenticSearchProgress}
-                  </div>
-                )}
-                <AgenticSearchThinking thinking={agenticSearchThinking} />
-                {agenticSearchResult?.answer && (
-                  <AgenticSearchAnswer answer={agenticSearchResult.answer} />
-                )}
-              </div>
+              <AgenticSearchChat
+                query={searchQuery ?? ""}
+                loading={agenticSearchLoading}
+                result={agenticSearchResult}
+                thinking={agenticSearchThinking}
+                progress={agenticSearchProgress}
+                error={agenticSearchError}
+              />
             )}
             {searchLoading ? (
               <div className="px-3 py-2 text-sm text-gh-text-secondary">Searching contents...</div>
@@ -557,9 +641,12 @@ export function Sidebar({
                   ))}
               </>
             )}
-            {!searchLoading && searchResults.length === 0 && files.length === 0 && (
-              <div className="px-3 py-2 text-sm text-gh-text-secondary">No matches found</div>
-            )}
+            {!searchLoading &&
+              searchResults.length === 0 &&
+              files.length === 0 &&
+              !agenticSearchHasTranscript && (
+                <div className="px-3 py-2 text-sm text-gh-text-secondary">No matches found</div>
+              )}
           </>
         ) : viewMode === "tree" ? (
           <TreeView

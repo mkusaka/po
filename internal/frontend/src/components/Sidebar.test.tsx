@@ -380,11 +380,14 @@ describe("Sidebar", () => {
       />,
     );
 
+    expect(screen.getByRole("log", { name: "Codex chat" })).toBeInTheDocument();
+    expect(screen.getByText("cache")).toBeInTheDocument();
     expect(screen.getByText("Summary").tagName).toBe("STRONG");
     expect(screen.getByText("README.md").tagName).toBe("CODE");
     expect(screen.getByText("README.md").closest("li")).toHaveTextContent(
       "README.md has cache notes",
     );
+    expect(screen.queryByText("No matches found")).not.toBeInTheDocument();
   });
 
   it("renders streamed agentic search progress and thinking", () => {
@@ -418,6 +421,33 @@ describe("Sidebar", () => {
     expect(screen.getByText("Thinking")).toBeInTheDocument();
     expect(screen.getByText("Checking repo files")).toBeInTheDocument();
     expect(screen.getByText("Partial answer")).toBeInTheDocument();
+  });
+
+  it("submits agentic search from chat controls", async () => {
+    const user = userEvent.setup();
+    const onAgenticSearch = vi.fn();
+    render(
+      <Sidebar
+        groups={groups}
+        activeGroup="default"
+        activeFileId={null}
+        onFileSelect={() => {}}
+        onFilesReorder={() => {}}
+        viewMode="flat"
+        showTitle={false}
+        searchQuery="cache"
+        onSearchQueryChange={() => {}}
+        agenticSearchEnabled={true}
+        onAgenticSearch={onAgenticSearch}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Send to Codex" }));
+    expect(onAgenticSearch).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByPlaceholderText("Search or ask Codex..."));
+    await user.keyboard("{Enter}");
+    expect(onAgenticSearch).toHaveBeenCalledTimes(2);
   });
 
   it("toggles content matches section", async () => {
