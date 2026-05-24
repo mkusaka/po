@@ -56,6 +56,26 @@ export const FONT_SIZE_STORAGE_KEY = "po-font-size";
 export const TOC_OPEN_STORAGE_KEY = "po-toc-open";
 const MAX_AGENTIC_SEARCH_HISTORY_MESSAGES = 12;
 const MAX_AGENTIC_SEARCH_HISTORY_CONTENT_LENGTH = 4000;
+const VIEW_MODE_QUERY_PARAM = "mode";
+
+function preserveCurrentViewMode(url: string): string {
+  const mode = new URLSearchParams(window.location.search).get(VIEW_MODE_QUERY_PARAM);
+  if (mode == null) return url;
+
+  const next = new URL(url, window.location.origin);
+  next.searchParams.set(VIEW_MODE_QUERY_PARAM, mode);
+  return `${next.pathname}${next.search}${next.hash}`;
+}
+
+function buildNavigationFileUrl(
+  groupName: string,
+  file: Pick<FileEntry, "id" | "relativePath"> | undefined,
+  fallbackFileId: string,
+): string {
+  return preserveCurrentViewMode(
+    file ? buildFileEntryUrl(groupName, file) : buildFileUrl(groupName, fallbackFileId),
+  );
+}
 
 export function getInitialFontSize(): FontSize {
   try {
@@ -308,7 +328,9 @@ export function App() {
     if (pendingFileParam != null) return;
     const group = groups.find((g) => g.name === activeGroup);
     const file = group?.files.find((f) => f.id === activeFileId);
-    const expectedUrl = file ? buildFileEntryUrl(activeGroup, file) : groupToPath(activeGroup);
+    const expectedUrl = file
+      ? buildNavigationFileUrl(activeGroup, file, file.id)
+      : preserveCurrentViewMode(groupToPath(activeGroup));
     if (window.location.pathname + window.location.search === expectedUrl) return;
     window.history.replaceState(null, "", expectedUrl);
   }, [activeGroup, activeFileId, groups, pendingFileParam]);
@@ -565,7 +587,7 @@ export function App() {
   }, [activeGroup, agenticSearchLoading, agenticSearchTurns, searchQuery]);
 
   const handleGroupChange = useCallback((name: string) => {
-    window.history.pushState(null, "", groupToPath(name));
+    window.history.pushState(null, "", preserveCurrentViewMode(groupToPath(name)));
     setActiveGroup(name);
     setActiveFileId(null);
   }, []);
@@ -573,11 +595,7 @@ export function App() {
   const handleFileSelect = useCallback(
     (fileId: string) => {
       const file = groups.find((g) => g.name === activeGroup)?.files.find((f) => f.id === fileId);
-      window.history.pushState(
-        null,
-        "",
-        file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, fileId),
-      );
+      window.history.pushState(null, "", buildNavigationFileUrl(activeGroup, file, fileId));
       setActiveFileId(fileId);
     },
     [activeGroup, groups],
@@ -589,11 +607,7 @@ export function App() {
       const file =
         groups.find((g) => g.name === activeGroup)?.files.find((f) => f.id === fileId) ??
         openedFile;
-      window.history.pushState(
-        null,
-        "",
-        file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, fileId),
-      );
+      window.history.pushState(null, "", buildNavigationFileUrl(activeGroup, file, fileId));
       setActiveFileId(fileId);
       setPendingSearchHeading(null);
     },
@@ -603,11 +617,7 @@ export function App() {
   const handleSearchResultSelect = useCallback(
     (fileId: string, heading?: string) => {
       const file = groups.find((g) => g.name === activeGroup)?.files.find((f) => f.id === fileId);
-      window.history.pushState(
-        null,
-        "",
-        file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, fileId),
-      );
+      window.history.pushState(null, "", buildNavigationFileUrl(activeGroup, file, fileId));
       setActiveFileId(fileId);
       setPendingSearchHeading(heading || null);
     },
@@ -743,6 +753,7 @@ export function App() {
               <MarkdownViewer
                 fileId={activeFileId}
                 fileName={activeFileName}
+                filePath={activeFile?.relativePath ?? activeFileName}
                 activeGroup={activeGroup}
                 revision={contentRevision}
                 onFileOpened={handleFileOpened}

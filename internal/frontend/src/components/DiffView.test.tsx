@@ -68,7 +68,11 @@ describe("DiffView", () => {
         revision={0}
         comments={[]}
         onAddComment={onAddComment}
+        onUpdateComment={() => {}}
         onDeleteComment={() => {}}
+        onAddReply={() => {}}
+        onUpdateReply={() => {}}
+        onDeleteReply={() => {}}
       />,
     );
 
@@ -84,6 +88,7 @@ describe("DiffView", () => {
       startLine: 3,
       endLine: 3,
       text: "Please update",
+      replies: [],
     });
   });
 
@@ -98,6 +103,7 @@ describe("DiffView", () => {
         endLine: 4,
         text: "Tighten this wording",
         createdAt: 1,
+        replies: [],
       },
     ];
     render(
@@ -107,7 +113,11 @@ describe("DiffView", () => {
         revision={0}
         comments={comments}
         onAddComment={() => {}}
+        onUpdateComment={() => {}}
         onDeleteComment={() => {}}
+        onAddReply={() => {}}
+        onUpdateReply={() => {}}
+        onDeleteReply={() => {}}
       />,
     );
 
@@ -117,5 +127,53 @@ describe("DiffView", () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("README.md:2-4:Tighten this wording");
     });
+  });
+
+  it("edits comments and adds replies", async () => {
+    const user = userEvent.setup();
+    const onUpdateComment = vi.fn();
+    const onAddReply = vi.fn();
+    const comments: DiffComment[] = [
+      {
+        id: "c1",
+        fileId: "abc12345",
+        filePath: "README.md",
+        side: "additions",
+        startLine: 2,
+        endLine: 2,
+        text: "Original",
+        createdAt: 1,
+        replies: [],
+      },
+    ];
+    render(
+      <DiffView
+        activeGroup="default"
+        fileId="abc12345"
+        revision={0}
+        comments={comments}
+        onAddComment={() => {}}
+        onUpdateComment={onUpdateComment}
+        onDeleteComment={() => {}}
+        onAddReply={onAddReply}
+        onUpdateReply={() => {}}
+        onDeleteReply={() => {}}
+      />,
+    );
+
+    await screen.findByTestId("diff");
+    await user.click(screen.getByRole("button", { name: "Edit comment" }));
+    const editBox = screen.getByRole("textbox", { name: "Edit comment" });
+    await user.clear(editBox);
+    await user.type(editBox, "Updated");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onUpdateComment).toHaveBeenCalledWith("c1", "Updated");
+
+    await user.click(screen.getByRole("button", { name: "Reply" }));
+    await user.type(screen.getByRole("textbox", { name: "Reply" }), "Looks good");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onAddReply).toHaveBeenCalledWith("c1", "Looks good");
   });
 });

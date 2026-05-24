@@ -1,17 +1,18 @@
 import type { ReactNode } from "react";
 
-export type MarkdownViewMode = "rendered" | "raw" | "diff";
+export type MarkdownViewMode = "md" | "code" | "diff";
 
 interface MarkdownViewModeToggleProps {
   mode: MarkdownViewMode;
   onChange: (mode: MarkdownViewMode) => void;
+  canRenderMarkdown: boolean;
 }
 
 const VIEW_MODES: { mode: MarkdownViewMode; label: string; title: string; icon: ReactNode }[] = [
   {
-    mode: "rendered",
-    label: "Rendered view",
-    title: "Show rendered",
+    mode: "md",
+    label: "Markdown view",
+    title: "Show Markdown",
     icon: (
       <svg
         className="size-4"
@@ -29,9 +30,9 @@ const VIEW_MODES: { mode: MarkdownViewMode; label: string; title: string; icon: 
     ),
   },
   {
-    mode: "raw",
-    label: "Raw view",
-    title: "Show raw",
+    mode: "code",
+    label: "Code view",
+    title: "Show code",
     icon: (
       <svg
         className="size-4"
@@ -67,7 +68,11 @@ const VIEW_MODES: { mode: MarkdownViewMode; label: string; title: string; icon: 
   },
 ];
 
-export function MarkdownViewModeToggle({ mode, onChange }: MarkdownViewModeToggleProps) {
+export function MarkdownViewModeToggle({
+  mode,
+  onChange,
+  canRenderMarkdown,
+}: MarkdownViewModeToggleProps) {
   return (
     <div
       className="inline-flex flex-col overflow-hidden border border-gh-border rounded-md bg-transparent"
@@ -76,6 +81,7 @@ export function MarkdownViewModeToggle({ mode, onChange }: MarkdownViewModeToggl
     >
       {VIEW_MODES.map((item, index) => {
         const active = item.mode === mode;
+        const disabled = item.mode === "md" && !canRenderMarkdown;
         return (
           <button
             key={item.mode}
@@ -86,11 +92,12 @@ export function MarkdownViewModeToggle({ mode, onChange }: MarkdownViewModeToggl
               active
                 ? "bg-gh-bg-active text-gh-text"
                 : "bg-transparent text-gh-text-secondary hover:bg-gh-bg-hover"
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent`}
             onClick={() => onChange(item.mode)}
+            disabled={disabled}
             aria-label={item.label}
             aria-pressed={active}
-            title={item.title}
+            title={disabled ? "Markdown view is available for Markdown files" : item.title}
           >
             {item.icon}
           </button>

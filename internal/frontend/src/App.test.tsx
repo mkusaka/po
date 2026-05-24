@@ -176,6 +176,28 @@ describe("App URL sync", () => {
     });
   });
 
+  it("preserves the view mode query when a file is clicked in the sidebar", async () => {
+    const user = userEvent.setup();
+    setUrl("/?file=aaa11111&mode=code");
+    render(<App />);
+
+    await screen.findByText("GUIDE.md");
+    await user.click(screen.getByText("GUIDE.md"));
+
+    await waitFor(() => {
+      expect(window.location.pathname + window.location.search).toBe("/?file=bbb22222&mode=code");
+    });
+  });
+
+  it("preserves the view mode query when auto-selecting the first file", async () => {
+    setUrl("/?mode=diff");
+    render(<App />);
+
+    await waitFor(() => {
+      expect(window.location.pathname + window.location.search).toBe("/?file=aaa11111&mode=diff");
+    });
+  });
+
   it("uses tree view by default when no view mode is stored", async () => {
     render(<App />);
 

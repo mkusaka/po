@@ -14,6 +14,7 @@ import { fetchFileContent, openRelativeFile } from "../hooks/useApi";
 import type { FileEntry } from "../hooks/useApi";
 import { isPlainLeftClick } from "../utils/linkClick";
 import { escapeRegExp } from "../utils/regex";
+import { CodeFileView } from "./CodeFileView";
 import { DiffView } from "./DiffView";
 import { MarkdownViewModeToggle, type MarkdownViewMode } from "./MarkdownViewModeToggle";
 import { TocToggle } from "./TocToggle";
@@ -22,7 +23,7 @@ import { CloseFileButton } from "./CloseFileButton";
 import { resolveLink, resolveImageSrc, extractLanguage } from "../utils/resolve";
 import { parseFrontmatter } from "../utils/frontmatter";
 import { stripMdxSyntax } from "../utils/mdx";
-import { isMarkdownFile, detectLanguage } from "../utils/filetype";
+import { isMarkdownFile } from "../utils/filetype";
 import { readStoredDiffComments, type DiffComment } from "../utils/diffComments";
 import type { ZoomContent } from "./ZoomModal";
 import type { TocHeading } from "./TocPanel";
@@ -68,6 +69,7 @@ const sanitizeSchema = {
 interface MarkdownViewerProps {
   fileId: string;
   fileName: string;
+  filePath: string;
   activeGroup: string;
   revision: number;
   onFileOpened: (file: Pick<FileEntry, "id" | "relativePath">) => void;
@@ -87,6 +89,7 @@ interface MarkdownViewerProps {
 
 const DIFF_COMMENTS_STORAGE_KEY = "po-diff-comments";
 const EMPTY_DIFF_COMMENTS: DiffComment[] = [];
+const VALID_MARKDOWN_VIEW_MODES: MarkdownViewMode[] = ["md", "code", "diff"];
 
 interface SearchHitMarker {
   top: number;
@@ -497,57 +500,6 @@ function FrontmatterBlock({ yaml }: { yaml: string }) {
   );
 }
 
-function HighlightedView({
-  content,
-  language,
-  wrap = false,
-}: {
-  content: string;
-  language: string;
-  wrap?: boolean;
-}) {
-  const [html, setHtml] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    setHtml("");
-    codeToHtml(content, { lang: language, theme: "github-dark" })
-      .then((result) => {
-        if (!cancelled) setHtml(result);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          codeToHtml(content, { lang: "text", theme: "github-dark" })
-            .then((result) => {
-              if (!cancelled) setHtml(result);
-            })
-            .catch(() => {});
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [content, language]);
-
-  if (html) {
-    return (
-      <div
-        className={`[&_pre]:!rounded-none${wrap ? " [&_pre]:!whitespace-pre-wrap [&_pre]:!break-words [&_code]:!whitespace-pre-wrap" : ""}`}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    );
-  }
-  return (
-    <pre className={wrap ? "whitespace-pre-wrap break-words" : undefined}>
-      <code>{content}</code>
-    </pre>
-  );
-}
-
-function RawView({ content }: { content: string }) {
-  return <HighlightedView content={content} language="markdown" wrap />;
-}
-
 function currentHashTargetId(): string | null {
   const hash = window.location.hash;
   if (!hash || hash === "#") return null;
@@ -559,9 +511,27 @@ function currentHashTargetId(): string | null {
   }
 }
 
+function readViewModeFromQuery(fileName: string): MarkdownViewMode {
+  const rawMode = new URLSearchParams(window.location.search).get("mode");
+  if (rawMode === "rendered") return "md";
+  if (rawMode === "raw") return "code";
+  if (rawMode != null && VALID_MARKDOWN_VIEW_MODES.includes(rawMode as MarkdownViewMode)) {
+    return rawMode as MarkdownViewMode;
+  }
+  return isMarkdownFile(fileName) ? "md" : "code";
+}
+
+function syncViewModeQuery(mode: MarkdownViewMode) {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("mode") === mode) return;
+  url.searchParams.set("mode", mode);
+  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 export function MarkdownViewer({
   fileId,
   fileName,
+  filePath,
   activeGroup,
   revision,
   onFileOpened,
@@ -580,7 +550,7 @@ export function MarkdownViewer({
 }: MarkdownViewerProps) {
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<MarkdownViewMode>("rendered");
+  const [viewMode, setViewMode] = useState<MarkdownViewMode>(() => readViewModeFromQuery(fileName));
   const [diffCommentsByFile, setDiffCommentsByFile] = useState<Record<string, DiffComment[]>>(() =>
     readStoredDiffComments(DIFF_COMMENTS_STORAGE_KEY),
   );
@@ -595,8 +565,9 @@ export function MarkdownViewer({
   }
 
   const isMarkdown = isMarkdownFile(fileName);
-  const effectiveViewMode = isMarkdown ? viewMode : "rendered";
-  const isRawView = effectiveViewMode === "raw";
+  const effectiveViewMode = !isMarkdown && viewMode === "md" ? "code" : viewMode;
+  const isMarkdownView = effectiveViewMode === "md";
+  const isCodeView = effectiveViewMode === "code";
   const isDiffView = effectiveViewMode === "diff";
 
   useEffect(() => {
@@ -618,6 +589,24 @@ export function MarkdownViewer({
       cancelled = true;
     };
   }, [activeGroup, fileId, revision]);
+
+  useEffect(() => {
+    if (!isMarkdown && viewMode === "md") {
+      setViewMode("code");
+    }
+  }, [isMarkdown, viewMode]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setViewMode(readViewModeFromQuery(fileName));
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [fileName]);
+
+  useEffect(() => {
+    syncViewModeQuery(effectiveViewMode);
+  }, [effectiveViewMode]);
 
   useEffect(() => {
     try {
@@ -736,11 +725,9 @@ export function MarkdownViewer({
     [fileId, handleLinkClick, onZoom],
   );
 
-  const codeLanguage = isMarkdown ? null : detectLanguage(fileName);
-
   const parsed = useMemo(
-    () => (isMarkdown && effectiveViewMode === "rendered" ? parseFrontmatter(content) : null),
-    [content, effectiveViewMode, isMarkdown],
+    () => (isMarkdown && isMarkdownView ? parseFrontmatter(content) : null),
+    [content, isMarkdown, isMarkdownView],
   );
 
   const fileComments = diffCommentsByFile[fileId] ?? EMPTY_DIFF_COMMENTS;
@@ -753,6 +740,22 @@ export function MarkdownViewer({
         ...prev,
         [fileId]: [...(prev[fileId] ?? []), { ...comment, id, createdAt: now }],
       }));
+    },
+    [fileId],
+  );
+
+  const handleUpdateDiffComment = useCallback(
+    (commentId: string, text: string) => {
+      const updatedAt = Date.now();
+      setDiffCommentsByFile((prev) => {
+        const comments = prev[fileId] ?? [];
+        return {
+          ...prev,
+          [fileId]: comments.map((comment) =>
+            comment.id === commentId ? { ...comment, text, updatedAt } : comment,
+          ),
+        };
+      });
     },
     [fileId],
   );
@@ -774,6 +777,68 @@ export function MarkdownViewer({
     [fileId],
   );
 
+  const handleAddDiffReply = useCallback(
+    (commentId: string, text: string) => {
+      const now = Date.now();
+      const id = `${now}-${Math.random().toString(36).slice(2, 8)}`;
+      setDiffCommentsByFile((prev) => {
+        const comments = prev[fileId] ?? [];
+        return {
+          ...prev,
+          [fileId]: comments.map((comment) =>
+            comment.id === commentId
+              ? { ...comment, replies: [...comment.replies, { id, text, createdAt: now }] }
+              : comment,
+          ),
+        };
+      });
+    },
+    [fileId],
+  );
+
+  const handleUpdateDiffReply = useCallback(
+    (commentId: string, replyId: string, text: string) => {
+      const updatedAt = Date.now();
+      setDiffCommentsByFile((prev) => {
+        const comments = prev[fileId] ?? [];
+        return {
+          ...prev,
+          [fileId]: comments.map((comment) =>
+            comment.id === commentId
+              ? {
+                  ...comment,
+                  replies: comment.replies.map((reply) =>
+                    reply.id === replyId ? { ...reply, text, updatedAt } : reply,
+                  ),
+                }
+              : comment,
+          ),
+        };
+      });
+    },
+    [fileId],
+  );
+
+  const handleDeleteDiffReply = useCallback(
+    (commentId: string, replyId: string) => {
+      setDiffCommentsByFile((prev) => {
+        const comments = prev[fileId] ?? [];
+        return {
+          ...prev,
+          [fileId]: comments.map((comment) =>
+            comment.id === commentId
+              ? {
+                  ...comment,
+                  replies: comment.replies.filter((reply) => reply.id !== replyId),
+                }
+              : comment,
+          ),
+        };
+      });
+    },
+    [fileId],
+  );
+
   const renderedContent = useMemo(() => {
     if (isDiffView) {
       return (
@@ -783,15 +848,31 @@ export function MarkdownViewer({
           revision={revision}
           comments={fileComments}
           onAddComment={handleAddDiffComment}
+          onUpdateComment={handleUpdateDiffComment}
           onDeleteComment={handleDeleteDiffComment}
+          onAddReply={handleAddDiffReply}
+          onUpdateReply={handleUpdateDiffReply}
+          onDeleteReply={handleDeleteDiffReply}
         />
       );
     }
-    if (!isMarkdown) {
-      return <HighlightedView content={content} language={codeLanguage!} />;
-    }
-    if (isRawView) {
-      return <RawView content={content} />;
+    if (isCodeView || !isMarkdown) {
+      return (
+        <CodeFileView
+          fileId={fileId}
+          fileName={fileName}
+          filePath={filePath}
+          content={content}
+          revision={revision}
+          comments={fileComments}
+          onAddComment={handleAddDiffComment}
+          onUpdateComment={handleUpdateDiffComment}
+          onDeleteComment={handleDeleteDiffComment}
+          onAddReply={handleAddDiffReply}
+          onUpdateReply={handleUpdateDiffReply}
+          onDeleteReply={handleDeleteDiffReply}
+        />
+      );
     }
     const base = parsed ? parsed.content : content;
     const md = fileName.toLowerCase().endsWith(".mdx") ? stripMdxSyntax(base) : base;
@@ -816,17 +897,21 @@ export function MarkdownViewer({
     );
   }, [
     activeGroup,
-    codeLanguage,
     components,
     content,
     fileComments,
     fileId,
     fileName,
+    filePath,
     handleAddDiffComment,
+    handleAddDiffReply,
     handleDeleteDiffComment,
+    handleDeleteDiffReply,
+    handleUpdateDiffComment,
+    handleUpdateDiffReply,
     isDiffView,
+    isCodeView,
     isMarkdown,
-    isRawView,
     parsed,
     revision,
   ]);
@@ -834,7 +919,7 @@ export function MarkdownViewer({
   const prevHeadingsKey = useRef("");
   useEffect(() => {
     const newHeadings: TocHeading[] = [];
-    if (effectiveViewMode === "rendered" && articleRef.current) {
+    if (effectiveViewMode === "md" && articleRef.current) {
       const els = articleRef.current.querySelectorAll("h1, h2, h3, h4, h5, h6");
       for (const el of els) {
         if (el.id) {
@@ -865,7 +950,7 @@ export function MarkdownViewer({
   }, [loading, renderedContent]);
 
   useLayoutEffect(() => {
-    if (loading || !articleRef.current || !isMarkdown || effectiveViewMode !== "rendered") {
+    if (loading || !articleRef.current || !isMarkdown || effectiveViewMode !== "md") {
       return;
     }
     const id = currentHashTargetId();
@@ -899,7 +984,7 @@ export function MarkdownViewer({
       loading ||
       !articleRef.current ||
       !isMarkdown ||
-      effectiveViewMode !== "rendered" ||
+      effectiveViewMode !== "md" ||
       !searchQuery?.trim()
     ) {
       setSearchHitMarkers([]);
@@ -939,7 +1024,7 @@ export function MarkdownViewer({
       <article
         ref={articleRef}
         className={
-          isDiffView
+          isDiffView || isCodeView
             ? "relative min-w-0 flex-1 overflow-visible"
             : `markdown-body relative min-w-0 flex-1 overflow-visible${isWide ? " markdown-body--wide" : ""}${fontSize !== "medium" ? ` markdown-body--${fontSize}` : ""}`
         }
@@ -960,10 +1045,14 @@ export function MarkdownViewer({
         {renderedContent}
       </article>
       <div className="shrink-0 flex flex-col gap-2 -mr-4 -mt-4 sticky -top-4">
-        {isMarkdown && viewMode === "rendered" && (
+        {isMarkdown && viewMode === "md" && (
           <TocToggle isTocOpen={isTocOpen} onToggle={onTocToggle} />
         )}
-        {isMarkdown && <MarkdownViewModeToggle mode={viewMode} onChange={setViewMode} />}
+        <MarkdownViewModeToggle
+          mode={effectiveViewMode}
+          onChange={setViewMode}
+          canRenderMarkdown={isMarkdown}
+        />
         <CopyButton content={content} />
         <CloseFileButton onClose={onRemoveFile} uploaded={uploaded} />
       </div>
