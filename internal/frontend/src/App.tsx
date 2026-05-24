@@ -6,6 +6,8 @@ import { FontSizeToggle, type FontSize } from "./components/FontSizeToggle";
 import { WidthToggle } from "./components/WidthToggle";
 import { GroupDropdown } from "./components/GroupDropdown";
 import { ViewModeToggle, type ViewMode } from "./components/ViewModeToggle";
+import { FileSortToggle } from "./components/FileSortToggle";
+import { HeaderFilePath } from "./components/HeaderFilePath";
 import { SearchToggle } from "./components/SearchToggle";
 import { TitleToggle } from "./components/TitleToggle";
 import { RestartButton } from "./components/RestartButton";
@@ -37,8 +39,10 @@ import {
   resolveFileParam,
 } from "./utils/groups";
 import { isMarkdownFile } from "./utils/filetype";
+import { isFileSortMode, type FileSortMode } from "./utils/fileSort";
 
 const VIEWMODE_STORAGE_KEY = "po-sidebar-viewmode";
+const FILE_SORT_STORAGE_KEY = "po-sidebar-file-sort";
 const WIDTH_STORAGE_KEY = "po-layout-width";
 const SHOW_TITLE_STORAGE_KEY = "po-sidebar-show-title";
 export const FONT_SIZE_STORAGE_KEY = "po-font-size";
@@ -112,6 +116,26 @@ export function App() {
     try {
       const stored = localStorage.getItem(VIEWMODE_STORAGE_KEY);
       if (stored) return JSON.parse(stored);
+    } catch {
+      /* ignore */
+    }
+    return {};
+  });
+  const [fileSortModes, setFileSortModes] = useState<Record<string, FileSortMode>>(() => {
+    try {
+      const stored = localStorage.getItem(FILE_SORT_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const modes: Record<string, FileSortMode> = {};
+          for (const [group, value] of Object.entries(parsed)) {
+            if (isFileSortMode(value)) {
+              modes[group] = value;
+            }
+          }
+          return modes;
+        }
+      }
     } catch {
       /* ignore */
     }
@@ -306,6 +330,11 @@ export function App() {
     [groups, activeGroup, activeFileId],
   );
   const activeFileName = activeFile?.name ?? "";
+  const activeFilePath = activeFile
+    ? activeFile.uploaded
+      ? activeFile.name
+      : (activeFile.relativePath ?? activeFile.path)
+    : "";
   const tocOpen = isTocOpenForFile(tocOpenMap, activeFileId, activeFileName);
   const currentShowTitle: boolean = showTitles[activeGroup] ?? false;
 
@@ -333,16 +362,22 @@ export function App() {
         }
         return current;
       });
+      loadGroups();
     },
   });
 
   const { isDragging } = useFileDrop(activeGroup);
 
   const currentViewMode: ViewMode = viewModes[activeGroup] ?? "tree";
+  const currentFileSortMode: FileSortMode = fileSortModes[activeGroup] ?? "default";
 
   useEffect(() => {
     localStorage.setItem(VIEWMODE_STORAGE_KEY, JSON.stringify(viewModes));
   }, [viewModes]);
+
+  useEffect(() => {
+    localStorage.setItem(FILE_SORT_STORAGE_KEY, JSON.stringify(fileSortModes));
+  }, [fileSortModes]);
 
   useEffect(() => {
     localStorage.setItem(SHOW_TITLE_STORAGE_KEY, JSON.stringify(showTitles));
@@ -376,6 +411,14 @@ export function App() {
     setViewModes((prev) => {
       const current = prev[activeGroup] ?? "tree";
       const nextMode: ViewMode = current === "flat" ? "tree" : "flat";
+      return { ...prev, [activeGroup]: nextMode };
+    });
+  }, [activeGroup]);
+
+  const handleFileSortToggle = useCallback(() => {
+    setFileSortModes((prev) => {
+      const current = prev[activeGroup] ?? "default";
+      const nextMode: FileSortMode = current === "updated" ? "default" : "updated";
       return { ...prev, [activeGroup]: nextMode };
     });
   }, [activeGroup]);
@@ -543,9 +586,11 @@ export function App() {
           onGroupChange={handleGroupChange}
         />
         <ViewModeToggle viewMode={currentViewMode} onToggle={handleViewModeToggle} />
+        <FileSortToggle sortMode={currentFileSortMode} onToggle={handleFileSortToggle} />
         <TitleToggle showTitle={currentShowTitle} onToggle={handleTitleToggle} />
         <SearchToggle isOpen={searchQuery != null} onToggle={handleSearchToggle} />
-        <div className="ml-auto flex items-center gap-2">
+        <HeaderFilePath path={activeFilePath} isRelative={activeFile?.relativePath != null} />
+        <div className="shrink-0 flex items-center gap-2">
           <FontSizeToggle fontSize={fontSize} onChange={setFontSize} />
           <WidthToggle isWide={isWide} onToggle={() => setIsWide((v) => !v)} />
           <ThemeToggle />
@@ -560,6 +605,7 @@ export function App() {
             onFileSelect={handleFileSelect}
             onFilesReorder={handleFilesReorder}
             viewMode={currentViewMode}
+            fileSortMode={currentFileSortMode}
             showTitle={currentShowTitle}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}

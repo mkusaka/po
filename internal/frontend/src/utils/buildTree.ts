@@ -1,4 +1,5 @@
 import type { FileEntry } from "../hooks/useApi";
+import { getFileUpdatedAtMs, type FileSortMode } from "./fileSort";
 
 export interface TreeNode {
   name: string;
@@ -7,7 +8,7 @@ export interface TreeNode {
   file: FileEntry | null;
 }
 
-export function buildTree(files: FileEntry[]): TreeNode {
+export function buildTree(files: FileEntry[], sortMode: FileSortMode = "default"): TreeNode {
   if (files.length === 0) {
     return { name: "", fullPath: "", children: [], file: null };
   }
@@ -27,7 +28,7 @@ export function buildTree(files: FileEntry[]): TreeNode {
         file,
       });
     }
-    sortTree(root);
+    sortTree(root, sortMode);
     return root;
   }
 
@@ -83,8 +84,8 @@ export function buildTree(files: FileEntry[]): TreeNode {
   // Collapse single-child directory nodes
   collapseSingleChild(root);
 
-  // Sort: directories first, then alphabetical
-  sortTree(root);
+  // Sort after collapsing so directory rows can use their newest descendant.
+  sortTree(root, sortMode);
 
   return root;
 }
@@ -128,14 +129,25 @@ const naturalCompare = new Intl.Collator(undefined, {
   sensitivity: "base",
 }).compare;
 
-function sortTree(node: TreeNode): void {
+function getTreeNodeUpdatedAtMs(node: TreeNode): number {
+  if (node.file != null) {
+    return getFileUpdatedAtMs(node.file);
+  }
+  return node.children.reduce((max, child) => Math.max(max, getTreeNodeUpdatedAtMs(child)), 0);
+}
+
+function sortTree(node: TreeNode, sortMode: FileSortMode): void {
   node.children.sort((a, b) => {
+    if (sortMode === "updated") {
+      const updatedDiff = getTreeNodeUpdatedAtMs(b) - getTreeNodeUpdatedAtMs(a);
+      if (updatedDiff !== 0) return updatedDiff;
+    }
     const aIsDir = a.file == null;
     const bIsDir = b.file == null;
     if (aIsDir !== bIsDir) return aIsDir ? -1 : 1;
     return naturalCompare(a.name, b.name);
   });
   for (const child of node.children) {
-    sortTree(child);
+    sortTree(child, sortMode);
   }
 }

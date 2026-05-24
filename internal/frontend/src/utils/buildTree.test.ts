@@ -7,6 +7,11 @@ function makeFile(id: string, path: string): FileEntry {
   return { id, name, path };
 }
 
+function makeUpdatedFile(id: string, path: string, updatedAt: string): FileEntry {
+  const name = path.split("/").pop()!;
+  return { id, name, path, updatedAt };
+}
+
 function makeUploadedFile(id: string, name: string): FileEntry {
   return { id, name, path: "", uploaded: true };
 }
@@ -168,5 +173,16 @@ describe("buildTree", () => {
     expect(root.children[1].name).toBe("a.md");
     expect(root.children[2].name).toBe("dropped.md");
     expect(root.children[2].file?.id).toBe("3");
+  });
+
+  it("sorts tree nodes by newest descendant in updated mode", () => {
+    const files = [
+      makeUpdatedFile("1", "/docs/a.md", "2026-01-01T00:00:00Z"),
+      makeUpdatedFile("2", "/docs/sub/b.md", "2026-01-03T00:00:00Z"),
+      makeUpdatedFile("3", "/docs/other/c.md", "2026-01-02T00:00:00Z"),
+    ];
+    const root = buildTree(files, "updated");
+
+    expect(root.children.map((c) => c.name)).toEqual(["sub", "other", "a.md"]);
   });
 });

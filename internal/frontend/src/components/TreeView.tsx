@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FileEntry, Group } from "../hooks/useApi";
 import { buildTree, type TreeNode } from "../utils/buildTree";
+import type { FileSortMode } from "../utils/fileSort";
 import { buildFileEntryUrl } from "../utils/groups";
 import { isPlainLeftClick } from "../utils/linkClick";
 import { FileContextMenu } from "./FileContextMenu";
@@ -25,6 +26,7 @@ interface TreeViewProps {
   files: FileEntry[];
   activeGroup: string;
   activeFileId: string | null;
+  fileSortMode: FileSortMode;
   showTitle: boolean;
   menuOpenId: string | null;
   otherGroups: Group[];
@@ -42,6 +44,7 @@ export function TreeView({
   files,
   activeGroup,
   activeFileId,
+  fileSortMode,
   showTitle,
   menuOpenId,
   otherGroups,
@@ -54,7 +57,7 @@ export function TreeView({
   onRemove,
   menuRef,
 }: TreeViewProps) {
-  const tree = useMemo(() => buildTree(files), [files]);
+  const tree = useMemo(() => buildTree(files, fileSortMode), [files, fileSortMode]);
   const [prevGroup, setPrevGroup] = useState(activeGroup);
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() =>
     getInitialCollapsed(activeGroup),

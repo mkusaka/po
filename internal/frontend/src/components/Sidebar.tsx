@@ -19,6 +19,7 @@ import { removeFile, moveFile } from "../hooks/useApi";
 import { buildFileEntryUrl, buildFileUrl } from "../utils/groups";
 import { isPlainLeftClick } from "../utils/linkClick";
 import { escapeRegExp } from "../utils/regex";
+import { sortFiles, type FileSortMode } from "../utils/fileSort";
 import type { ViewMode } from "./ViewModeToggle";
 import { TreeView } from "./TreeView";
 import { FileContextMenu } from "./FileContextMenu";
@@ -151,6 +152,7 @@ interface SidebarProps {
   onFileSelect: (id: string) => void;
   onFilesReorder: (groupName: string, fileIds: string[]) => void;
   viewMode: ViewMode;
+  fileSortMode?: FileSortMode;
   showTitle: boolean;
   searchQuery: string | null;
   onSearchQueryChange: (query: string | null) => void;
@@ -171,6 +173,7 @@ export function Sidebar({
   onFileSelect,
   onFilesReorder,
   viewMode,
+  fileSortMode = "default",
   showTitle,
   searchQuery,
   onSearchQueryChange,
@@ -192,13 +195,17 @@ export function Sidebar({
   const searchOpen = searchQuery != null;
   const isSearching = searchQuery != null && searchQuery.length > 0;
 
-  const files = useMemo(() => {
+  const filteredFiles = useMemo(() => {
     if (!searchQuery) return allFiles;
     const q = searchQuery.toLowerCase();
     return allFiles.filter(
       (f) => f.name.toLowerCase().includes(q) || (f.title && f.title.toLowerCase().includes(q)),
     );
   }, [allFiles, searchQuery]);
+  const files = useMemo(
+    () => sortFiles(filteredFiles, fileSortMode),
+    [filteredFiles, fileSortMode],
+  );
 
   useEffect(() => {
     if (searchOpen) {
@@ -283,13 +290,13 @@ export function Sidebar({
   const handleOpenInNewTab = useCallback(
     (id: string) => {
       setMenuOpenId(null);
-      const file = files.find((f) => f.id === id);
+      const file = allFiles.find((f) => f.id === id);
       window.open(
         file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, id),
         "_blank",
       );
     },
-    [activeGroup, files],
+    [activeGroup, allFiles],
   );
 
   const otherGroups = useMemo(() => {
@@ -322,14 +329,14 @@ export function Sidebar({
   const handleCopyLink = useCallback(
     (id: string) => {
       setMenuOpenId(null);
-      const file = files.find((f) => f.id === id);
+      const file = allFiles.find((f) => f.id === id);
       const url = new URL(
         file ? buildFileEntryUrl(activeGroup, file) : buildFileUrl(activeGroup, id),
         window.location.origin,
       );
       navigator.clipboard.writeText(url.toString()).catch(() => {});
     },
-    [activeGroup, files],
+    [activeGroup, allFiles],
   );
 
   const handleRemove = useCallback(
@@ -495,6 +502,7 @@ export function Sidebar({
             files={files}
             activeGroup={activeGroup}
             activeFileId={activeFileId}
+            fileSortMode={fileSortMode}
             showTitle={showTitle}
             menuOpenId={menuOpenId}
             otherGroups={otherGroups}
@@ -507,6 +515,26 @@ export function Sidebar({
             onRemove={handleRemove}
             menuRef={menuRef}
           />
+        ) : fileSortMode === "updated" ? (
+          files.map((f) => (
+            <FileItem
+              key={f.id}
+              file={f}
+              activeGroup={activeGroup}
+              isActive={f.id === activeFileId}
+              showTitle={showTitle}
+              menuOpenId={menuOpenId}
+              otherGroups={otherGroups}
+              onFileSelect={onFileSelect}
+              onMenuToggle={handleMenuToggle}
+              onOpenInNewTab={handleOpenInNewTab}
+              onCopyPath={handleCopyPath}
+              onCopyLink={handleCopyLink}
+              onMoveToGroup={handleMoveToGroup}
+              onRemove={handleRemove}
+              menuRef={menuRef}
+            />
+          ))
         ) : (
           <DndContext
             sensors={sensors}

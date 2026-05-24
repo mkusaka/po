@@ -30,13 +30,14 @@ import (
 )
 
 type FileEntry struct {
-	Name         string `json:"name"`
-	ID           string `json:"id"`
-	Path         string `json:"path"`
-	RelativePath string `json:"relativePath,omitempty"`
-	Title        string `json:"title,omitempty"`
-	Uploaded     bool   `json:"uploaded,omitempty"`
-	content      string // in-memory content for uploaded files
+	Name         string     `json:"name"`
+	ID           string     `json:"id"`
+	Path         string     `json:"path"`
+	RelativePath string     `json:"relativePath,omitempty"`
+	Title        string     `json:"title,omitempty"`
+	UpdatedAt    *time.Time `json:"updatedAt,omitempty"`
+	Uploaded     bool       `json:"uploaded,omitempty"`
+	content      string     // in-memory content for uploaded files
 }
 
 const headFileSizeLimit = 8192
@@ -296,20 +297,21 @@ var ErrFileNotFound = errors.New("file not found")
 // readFileHead reads the first 8KB of the file at path.
 // Returns the bytes read and any error (os.ErrNotExist is passed through).
 // Non-regular files return an error.
-func readFileHead(path string) ([]byte, error) {
+func readFileHead(path string) ([]byte, time.Time, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("not a regular file: %s", path)
+		return nil, time.Time{}, fmt.Errorf("not a regular file: %s", path)
 	}
 	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	defer f.Close()
-	return io.ReadAll(io.LimitReader(f, headFileSizeLimit))
+	head, err := io.ReadAll(io.LimitReader(f, headFileSizeLimit))
+	return head, fi.ModTime(), err
 }
 
 func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
@@ -331,7 +333,7 @@ func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
 	}
 
 	// Read file head once for both binary check and title extraction.
-	head, err := readFileHead(absPath)
+	head, updatedAt, err := readFileHead(absPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("failed to read file %s: %w", absPath, err)
@@ -341,6 +343,10 @@ func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
 	}
 
 	title := extractTitle(string(head))
+	var updatedAtPtr *time.Time
+	if !updatedAt.IsZero() {
+		updatedAtPtr = &updatedAt
+	}
 	var canonical string
 	if s.watcher != nil {
 		canonical = resolvePathAlias(absPath)
@@ -372,6 +378,7 @@ func (s *State) AddFile(absPath, groupName string) (*FileEntry, error) {
 		Path:         absPath,
 		RelativePath: relPath,
 		Title:        title,
+		UpdatedAt:    updatedAtPtr,
 	}
 	g.Files = append(g.Files, entry)
 
@@ -416,13 +423,15 @@ func (s *State) AddUploadedFile(name, content, groupName string) *FileEntry {
 		head = head[:headFileSizeLimit]
 	}
 	title := extractTitle(head)
+	updatedAt := time.Now()
 
 	entry := &FileEntry{
-		Name:     name,
-		ID:       id,
-		Title:    title,
-		Uploaded: true,
-		content:  content,
+		Name:      name,
+		ID:        id,
+		Title:     title,
+		UpdatedAt: &updatedAt,
+		Uploaded:  true,
+		content:   content,
 	}
 	g.Files = append(g.Files, entry)
 
@@ -1145,6 +1154,14 @@ func (s *State) scheduleFileChanged(absPath string) {
 func (s *State) notifyFileChangedByPath(absPath string) {
 	// Extract the title outside the lock (file I/O should not hold the mutex).
 	newTitle, titleOK := extractTitleFromFile(absPath)
+	var updatedAt time.Time
+	if fi, err := os.Stat(absPath); err == nil {
+		updatedAt = fi.ModTime()
+	}
+	var updatedAtPtr *time.Time
+	if !updatedAt.IsZero() {
+		updatedAtPtr = &updatedAt
+	}
 
 	// Single lock pass: collect IDs and update titles together.
 	var ids []string
@@ -1154,6 +1171,9 @@ func (s *State) notifyFileChangedByPath(absPath string) {
 		for _, entry := range g.Files {
 			if entry.Path == absPath {
 				ids = append(ids, entry.ID)
+				if updatedAtPtr != nil {
+					entry.UpdatedAt = updatedAtPtr
+				}
 				if titleOK && entry.Title != newTitle {
 					entry.Title = newTitle
 					titleChanged = true

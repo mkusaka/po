@@ -4,6 +4,7 @@ export interface FileEntry {
   path: string;
   relativePath?: string;
   title?: string;
+  updatedAt?: string;
   uploaded?: boolean;
 }
 

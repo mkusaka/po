@@ -229,6 +229,22 @@ describe("App URL sync", () => {
     expect(window.location.pathname + window.location.search).toBe("/po?file=docs/guide.md");
   });
 
+  it("shows the active relative path in the header and copies it", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    setUrl("/po?file=docs/guide.md");
+    render(<App />);
+
+    expect(await screen.findByText("docs/guide.md")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("Copy relative path"));
+
+    expect(writeText).toHaveBeenCalledWith("docs/guide.md");
+  });
+
   it("falls back to the first file when ?file= references an unknown id", async () => {
     setUrl("/?file=zzz99999");
     render(<App />);
