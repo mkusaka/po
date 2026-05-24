@@ -1,22 +1,31 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 interface HeaderFilePathProps {
   path: string;
   isRelative: boolean;
 }
 
-export function HeaderFilePath({ path, isRelative }: HeaderFilePathProps) {
-  const [copied, setCopied] = useState(false);
-  const label = isRelative ? "Copy relative path" : "Copy file path";
+const COPY_RESET_DELAY_MS = 2000;
 
-  useEffect(() => {
-    setCopied(false);
-  }, [path]);
+export function HeaderFilePath({ path, isRelative }: HeaderFilePathProps) {
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const label = isRelative ? "Copy relative path" : "Copy file path";
+  const copied = copiedPath === path;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard
       .writeText(path)
-      .then(() => setCopied(true))
+      .then(() => {
+        setCopiedPath(path);
+        if (resetTimerRef.current != null) {
+          clearTimeout(resetTimerRef.current);
+        }
+        resetTimerRef.current = setTimeout(() => {
+          setCopiedPath((current) => (current === path ? null : current));
+          resetTimerRef.current = null;
+        }, COPY_RESET_DELAY_MS);
+      })
       .catch(() => {});
   }, [path]);
 
